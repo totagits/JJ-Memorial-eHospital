@@ -102,17 +102,25 @@ npm run build
 
 ## Deploying to Staging (`jjmemorial-staging.totag.network`)
 
-The production build in `dist/` can be served directly using Nginx, Docker, or Coolify on the TOTAG VPS infrastructure:
-```dockerfile
-FROM node:20-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
+The repository includes a production multi-stage `Dockerfile` and `nginx.conf` configured for automated deployment via Coolify (**`https://coolify.totaggroup.com/`**) and Docker.
 
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+### Automated CI/CD with Coolify Webhooks
+
+To enable automatic zero-touch redeployment whenever code is pushed to branch `JJ-Memorial-staging`:
+
+1. **Automated Setup via Helper Script:**
+   ```bash
+   ./scripts/setup-coolify-webhook.sh \
+     --webhook-url "https://coolify.totaggroup.com/api/v1/deploy?uuid=YOUR_UUID" \
+     --token "ghp_YOUR_GITHUB_PAT"
+   ```
+
+2. **Manual Setup & Step-by-Step Guide:**
+   See the full documentation in [**`docs/COOLIFY_WEBHOOK_GUIDE.md`**](./docs/COOLIFY_WEBHOOK_GUIDE.md).
+
+### Manual Docker Build on Hostinger / VPS
+```bash
+docker build -t jj-memorial-staging .
+docker run -d -p 127.0.0.1:3080:80 --name jj-memorial-app --restart always jj-memorial-staging
 ```
+
