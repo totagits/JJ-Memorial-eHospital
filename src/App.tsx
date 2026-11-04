@@ -11,6 +11,9 @@ import { StaffDirectory } from './components/public/StaffDirectory';
 import { Partnerships } from './components/public/Partnerships';
 import { FAQ } from './components/public/FAQ';
 import { Footer } from './components/public/Footer';
+import { ServicesSpecialties } from './components/public/ServicesSpecialties';
+import { EnterpriseDifference } from './components/public/EnterpriseDifference';
+import { CTABanner } from './components/public/CTABanner';
 import { PublicAppointmentModal } from './components/public/PublicAppointmentModal';
 import { PatientPortal } from './components/patient/PatientPortal';
 import { StaffWorkspace } from './components/staff/StaffWorkspace';
@@ -83,6 +86,8 @@ export const AppContent: React.FC = () => {
                   onExploreFacilities={() => setCurrentTab('facilities')}
                   onGoTriage={() => setCurrentTab('staff-workspace')}
                 />
+                <ServicesSpecialties />
+                <EnterpriseDifference />
                 <PatientTestimonials
                   onLeaveFeedback={() => setCurrentTab('patient-portal')}
                 />
@@ -93,6 +98,10 @@ export const AppContent: React.FC = () => {
                 />
                 <Partnerships />
                 <FAQ />
+                <CTABanner
+                  onBookAppointment={() => handleOpenBooking()}
+                  onGoPatientPortal={() => setCurrentTab('patient-portal')}
+                />
               </>
             )}
 
