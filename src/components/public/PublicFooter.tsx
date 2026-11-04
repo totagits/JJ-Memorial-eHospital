@@ -37,8 +37,8 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({ onNavigate, onSwitch
               </button>
             </li>
             <li>
-              <button onClick={() => onNavigate('doctors')} className="hover:text-teal-300 transition-colors">
-                Find Attending Physicians
+              <button onClick={() => onNavigate('staff-directory')} className="hover:text-teal-300 transition-colors">
+                Staff Directory & Specialists
               </button>
             </li>
             <li>

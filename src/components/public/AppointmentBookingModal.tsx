@@ -7,12 +7,16 @@ interface AppointmentBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (appointment: Appointment) => void;
+  initialClinicianId?: string;
+  initialDepartment?: string;
 }
 
 export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  initialClinicianId,
+  initialDepartment,
 }) => {
   const db = getDatabaseState();
 
@@ -22,12 +26,23 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
     phone: '',
     email: '',
     dateOfBirth: '',
-    department: 'Internal Medicine & OPD',
-    clinicianId: 'USR-002',
+    department: initialDepartment || 'Internal Medicine & OPD',
+    clinicianId: initialClinicianId || 'USR-002',
     date: '2026-11-04',
     timeSlot: '10:00 AM',
     reason: '',
   });
+
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialClinicianId) {
+        setFormData(prev => ({ ...prev, clinicianId: initialClinicianId }));
+      }
+      if (initialDepartment) {
+        setFormData(prev => ({ ...prev, department: initialDepartment }));
+      }
+    }
+  }, [isOpen, initialClinicianId, initialDepartment]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedAppointment, setConfirmedAppointment] = useState<Appointment | null>(null);

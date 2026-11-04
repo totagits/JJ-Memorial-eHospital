@@ -67,6 +67,9 @@ import { BiometricLockOverlay } from './BiometricLockOverlay';
 import { PatientRegistrationModal } from './PatientRegistrationModal';
 import { DowntimeContinuityModal } from './DowntimeContinuityModal';
 import { DeploymentRunbookModal } from './DeploymentRunbookModal';
+import { isRoleAuthorizedForModule, getRoleScopeConfig } from '../../types/rbac';
+import { RbacAccessBoundary } from './RbacAccessBoundary';
+import { RoleAnalyticsPanel } from './RoleAnalyticsPanel';
 
 interface StaffWorkspaceProps {
   onBackToPublicSite: () => void;
@@ -192,6 +195,10 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
     { id: 'quality', label: 'Quality & Safety Incidents', icon: AlertCircle },
   ];
 
+  const authorizedNavItems = navItems.filter(item => isRoleAuthorizedForModule(currentUser.role, item.id));
+  const restrictedNavItems = navItems.filter(item => !isRoleAuthorizedForModule(currentUser.role, item.id));
+  const currentScope = getRoleScopeConfig(currentUser.role);
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
       {/* Top Staff Navigation Bar */}
@@ -311,7 +318,13 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
             <RoleSwitcher
               currentUser={currentUser}
               allUsers={db.users}
-              onSelectUser={u => setCurrentUser(u)}
+              onSelectUser={u => {
+                setCurrentUser(u);
+                const scope = getRoleScopeConfig(u.role);
+                if (!isRoleAuthorizedForModule(u.role, activeModule)) {
+                  setActiveModule(scope.primaryWorkstation);
+                }
+              }}
             />
 
             {/* Back to Public Hospital Website */}
@@ -357,31 +370,73 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
       <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex flex-col md:flex-row gap-6">
         {/* Module Sidebar */}
         <aside className="w-full md:w-64 shrink-0 space-y-3">
-          <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block px-2 mb-2">
-              Clinical & ERP Modules
-            </span>
+          <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs space-y-3">
+            {/* Authorized Scope */}
+            <div>
+              <span className="text-[10px] font-bold text-teal-800 uppercase tracking-wider flex items-center justify-between px-2 mb-1.5">
+                <span>Authorized Workstations</span>
+                <span className="bg-teal-50 text-teal-700 px-1.5 py-0.2 rounded font-mono font-bold">
+                  {authorizedNavItems.length}
+                </span>
+              </span>
+              <nav className="space-y-1">
+                {authorizedNavItems.map(item => {
+                  const Icon = item.icon;
+                  const isActive = activeModule === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveModule(item.id)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer ${
+                        isActive
+                          ? 'bg-teal-800 text-white shadow-xs font-semibold'
+                          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-teal-200' : 'text-teal-700'}`} />
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
 
-            <nav className="space-y-1">
-              {navItems.map(item => {
-                const Icon = item.icon;
-                const isActive = activeModule === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveModule(item.id)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer ${
-                      isActive
-                        ? 'bg-teal-800 text-white shadow-xs font-semibold'
-                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                    }`}
-                  >
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-teal-200' : 'text-slate-500'}`} />
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
+            {/* Segregated / Restricted Modules */}
+            {restrictedNavItems.length > 0 && (
+              <div className="pt-2 border-t border-slate-100">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-2 mb-1.5">
+                  <span className="flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-slate-400" />
+                    Restricted Workstations
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-mono font-medium">SoD Enforced</span>
+                </span>
+                <nav className="space-y-0.5">
+                  {restrictedNavItems.map(item => {
+                    const Icon = item.icon;
+                    const isActive = activeModule === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setActiveModule(item.id)}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors text-left cursor-pointer ${
+                          isActive
+                            ? 'bg-rose-50 text-rose-900 border border-rose-200 font-semibold'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                        }`}
+                        title="Restricted by RBAC Segregation of Duties. Click to view scope boundary."
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <Icon className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+                        <Lock className="w-3 h-3 text-slate-300 shrink-0 ml-1" />
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+            )}
           </div>
 
           {/* VOA East IndexedDB Offline Resiliency Card */}
@@ -462,27 +517,51 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
         </aside>
 
         {/* Dynamic Workspace Workstation View */}
-        <main className="flex-1 min-w-0">
-          {activeModule === 'messages' && <StaffMessagingWorkstation currentUser={currentUser} />}
-          {activeModule === 'executive_bi' && <ExecutiveIntelligenceDashboard />}
-          {activeModule === 'command_center' && <ExecutiveCommandCenter />}
-          {activeModule === 'opd' && <ClinicalWorkstation currentUser={currentUser} />}
-          {activeModule === 'triage' && <TriageNursingWorkstation currentUser={currentUser} />}
-          {activeModule === 'inpatient' && <InpatientADTWorkstation currentUser={currentUser} />}
-          {activeModule === 'lab' && <LaboratoryWorkstation currentUser={currentUser} />}
-          {activeModule === 'blood_bank' && <BloodBankWorkstation currentUser={currentUser} />}
-          {activeModule === 'radiology' && <RadiologyWorkstation currentUser={currentUser} />}
-          {activeModule === 'resources' && <ResourceManagementWorkstation currentUser={currentUser} />}
-          {activeModule === 'pharmacy' && <PharmacyWorkstation currentUser={currentUser} />}
-          {activeModule === 'insurance' && <InsuranceVerificationWorkstation currentUser={currentUser} />}
-          {activeModule === 'billing' && <BillingCashierWorkstation currentUser={currentUser} />}
-          {activeModule === 'gl' && <GeneralLedgerWorkstation currentUser={currentUser} />}
-          {activeModule === 'procurement' && <ProcurementInventoryWorkstation currentUser={currentUser} />}
-          {activeModule === 'hr' && <HRPayrollWorkstation currentUser={currentUser} />}
-          {activeModule === 'scheduling' && <StaffSchedulingWorkstation currentUser={currentUser} />}
-          {activeModule === 'assets' && <AssetsFacilitiesWorkstation currentUser={currentUser} />}
-          {activeModule === 'audit_trail' && <AuditTrailWorkstation currentUser={currentUser} />}
-          {activeModule === 'quality' && <QualityAuditWorkstation currentUser={currentUser} />}
+        <main className="flex-1 min-w-0 space-y-6">
+          {/* Role Decision Support & Real-Time Analytic Tool */}
+          <RoleAnalyticsPanel
+            currentUser={currentUser}
+            onNavigateModule={m => setActiveModule(m)}
+          />
+
+          {/* Module Content or RBAC Scope Boundary */}
+          {!isRoleAuthorizedForModule(currentUser.role, activeModule) ? (
+            <RbacAccessBoundary
+              currentUser={currentUser}
+              targetModuleId={activeModule}
+              targetModuleName={navItems.find(i => i.id === activeModule)?.label || activeModule}
+              onTriggerBreakGlass={() => setShowBreakGlassModal(true)}
+              onSwitchToAuthorizedRole={role => {
+                const targetUser = db.users.find(u => u.role === role);
+                if (targetUser) {
+                  setCurrentUser(targetUser);
+                }
+              }}
+            />
+          ) : (
+            <>
+              {activeModule === 'messages' && <StaffMessagingWorkstation currentUser={currentUser} />}
+              {activeModule === 'executive_bi' && <ExecutiveIntelligenceDashboard />}
+              {activeModule === 'command_center' && <ExecutiveCommandCenter />}
+              {activeModule === 'opd' && <ClinicalWorkstation currentUser={currentUser} />}
+              {activeModule === 'triage' && <TriageNursingWorkstation currentUser={currentUser} />}
+              {activeModule === 'inpatient' && <InpatientADTWorkstation currentUser={currentUser} />}
+              {activeModule === 'lab' && <LaboratoryWorkstation currentUser={currentUser} />}
+              {activeModule === 'blood_bank' && <BloodBankWorkstation currentUser={currentUser} />}
+              {activeModule === 'radiology' && <RadiologyWorkstation currentUser={currentUser} />}
+              {activeModule === 'resources' && <ResourceManagementWorkstation currentUser={currentUser} />}
+              {activeModule === 'pharmacy' && <PharmacyWorkstation currentUser={currentUser} />}
+              {activeModule === 'insurance' && <InsuranceVerificationWorkstation currentUser={currentUser} />}
+              {activeModule === 'billing' && <BillingCashierWorkstation currentUser={currentUser} />}
+              {activeModule === 'gl' && <GeneralLedgerWorkstation currentUser={currentUser} />}
+              {activeModule === 'procurement' && <ProcurementInventoryWorkstation currentUser={currentUser} />}
+              {activeModule === 'hr' && <HRPayrollWorkstation currentUser={currentUser} />}
+              {activeModule === 'scheduling' && <StaffSchedulingWorkstation currentUser={currentUser} />}
+              {activeModule === 'assets' && <AssetsFacilitiesWorkstation currentUser={currentUser} />}
+              {activeModule === 'audit_trail' && <AuditTrailWorkstation currentUser={currentUser} />}
+              {activeModule === 'quality' && <QualityAuditWorkstation currentUser={currentUser} />}
+            </>
+          )}
         </main>
       </div>
 

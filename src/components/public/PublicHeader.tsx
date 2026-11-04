@@ -123,12 +123,12 @@ export const PublicHeader: React.FC<PublicHeaderProps> = ({
             Services & Specialties
           </button>
           <button
-            onClick={() => onNavigate('doctors')}
+            onClick={() => onNavigate('staff-directory')}
             className={`transition-colors hover:text-teal-800 py-1 ${
-              currentTab === 'doctors' ? 'text-teal-800 border-b-2 border-teal-700 font-semibold' : ''
+              currentTab === 'staff-directory' || currentTab === 'doctors' ? 'text-teal-800 border-b-2 border-teal-700 font-semibold' : ''
             }`}
           >
-            Find a Doctor
+            Staff Directory
           </button>
           <button
             onClick={() => onNavigate('portal')}

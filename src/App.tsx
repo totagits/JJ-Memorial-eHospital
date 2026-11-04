@@ -5,6 +5,7 @@ import { HomePage } from './components/public/HomePage';
 import { AboutPage } from './components/public/AboutPage';
 import { ServicesPage } from './components/public/ServicesPage';
 import { DoctorsPage } from './components/public/DoctorsPage';
+import { StaffDirectoryPage } from './components/public/StaffDirectoryPage';
 import { PatientPortalView } from './components/public/PatientPortalView';
 import { HealthResourcesPage } from './components/public/HealthResourcesPage';
 import { ContactPage } from './components/public/ContactPage';
@@ -17,6 +18,14 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'public' | 'staff'>('public');
   const [publicTab, setPublicTab] = useState<string>('home');
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
+  const [selectedClinicianId, setSelectedClinicianId] = useState<string | undefined>(undefined);
+  const [selectedDepartment, setSelectedDepartment] = useState<string | undefined>(undefined);
+
+  const handleOpenAppointmentModal = (clinicianId?: string, department?: string) => {
+    setSelectedClinicianId(clinicianId);
+    setSelectedDepartment(department);
+    setIsAppointmentModalOpen(true);
+  };
 
   // Synchronize state with persistent database changes
   const [, setTick] = useState(0);
@@ -78,19 +87,19 @@ export default function App() {
                   setPublicTab(tab);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                onOpenAppointmentModal={() => setIsAppointmentModalOpen(true)}
+                onOpenAppointmentModal={() => handleOpenAppointmentModal()}
                 onSwitchToStaff={() => setViewMode('staff')}
               />
             )}
             {publicTab === 'about' && <AboutPage />}
             {publicTab === 'services' && (
-              <ServicesPage onOpenAppointmentModal={() => setIsAppointmentModalOpen(true)} />
+              <ServicesPage onOpenAppointmentModal={() => handleOpenAppointmentModal()} />
             )}
-            {publicTab === 'doctors' && (
-              <DoctorsPage onOpenAppointmentModal={() => setIsAppointmentModalOpen(true)} />
+            {(publicTab === 'doctors' || publicTab === 'staff-directory') && (
+              <StaffDirectoryPage onOpenAppointmentModal={handleOpenAppointmentModal} />
             )}
             {publicTab === 'portal' && (
-              <PatientPortalView onOpenAppointmentModal={() => setIsAppointmentModalOpen(true)} />
+              <PatientPortalView onOpenAppointmentModal={() => handleOpenAppointmentModal()} />
             )}
             {publicTab === 'health' && <HealthResourcesPage />}
             {publicTab === 'contact' && <ContactPage />}
@@ -107,7 +116,13 @@ export default function App() {
           {/* Patient Online Appointment Booking Flow */}
           <AppointmentBookingModal
             isOpen={isAppointmentModalOpen}
-            onClose={() => setIsAppointmentModalOpen(false)}
+            onClose={() => {
+              setIsAppointmentModalOpen(false);
+              setSelectedClinicianId(undefined);
+              setSelectedDepartment(undefined);
+            }}
+            initialClinicianId={selectedClinicianId}
+            initialDepartment={selectedDepartment}
             onSuccess={apt => {
               // Successfully booked
             }}
