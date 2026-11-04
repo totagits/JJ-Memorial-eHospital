@@ -1,230 +1,268 @@
 import React, { useState } from 'react';
-import { dbStore } from '../../services/dbStore';
-import { ClinicFacility } from '../../types';
-import { useTranslation } from '../../services/i18n';
-import { MapPin, Phone, Clock, Mail, CheckCircle2, Navigation, Compass, Search } from 'lucide-react';
+import { 
+  MapPin, 
+  Phone, 
+  Clock, 
+  ExternalLink, 
+  Building2, 
+  ShieldCheck, 
+  Navigation,
+  Car,
+  Activity,
+  Zap
+} from 'lucide-react';
+
+interface ClinicBranch {
+  id: string;
+  name: string;
+  tier: string;
+  address: string;
+  community: string;
+  city: string;
+  phone: string;
+  emergencyHotline: string;
+  hours: string;
+  services: string[];
+  powerGrid: string;
+  coordinates: { lat: number; lng: number };
+  googleMapsUrl: string;
+  isMainCampus: boolean;
+}
+
+const BRANCHES: ClinicBranch[] = [
+  {
+    id: 'MAIN-VOA',
+    name: 'J & J Memorial Main Hospital Campus',
+    tier: 'Tertiary Medical Center & Surgical Facility',
+    address: 'VOA East Community, Monrovia, Liberia',
+    community: 'VOA East',
+    city: 'Monrovia',
+    phone: '+231 (0) 777-123-456',
+    emergencyHotline: '+231 (0) 770-JJ-MEM',
+    hours: 'Open 24 Hours / 7 Days a Week',
+    services: [
+      '24/7 Acute Emergency & Trauma Bay',
+      'Dual Operating Theaters & Surgical Suites',
+      'Inpatient Adult & Pediatric Wards (ADT)',
+      'Clinical Pathology & Microbiology Lab',
+      'Digital Radiography (X-Ray) & Ultrasound',
+      'Full Blood Bank & Transfusion Medicine',
+      '24/7 Licensed Inpatient Pharmacy'
+    ],
+    powerGrid: '500kVA Cummins Diesel Backup + 80kW Solar Hybrid Array',
+    coordinates: { lat: 6.3892, lng: -10.7491 },
+    googleMapsUrl: 'https://maps.google.com/?q=VOA+East+Community+Monrovia+Liberia',
+    isMainCampus: true
+  },
+  {
+    id: 'SINKOR-CLINIC',
+    name: 'Sinkor Outpatient Specialty Center',
+    tier: 'Executive Consultation & Specialist Clinic',
+    address: 'Tubman Boulevard, 12th Street, Sinkor',
+    community: 'Sinkor',
+    city: 'Monrovia',
+    phone: '+231 (0) 775-889-112',
+    emergencyHotline: '+231 (0) 770-JJ-MEM',
+    hours: 'Mon - Sat: 08:00 AM - 06:00 PM',
+    services: [
+      'Cardiology & Hypertension Consultations',
+      'Maternal Antenatal & Postnatal Checks',
+      'Routine Diagnostic Blood & Urine Panels',
+      'Executive Health Screening Packages',
+      'Outpatient Pharmacy Dispensary'
+    ],
+    powerGrid: 'Dedicated 150kVA Generator + Grid Power',
+    coordinates: { lat: 6.2954, lng: -10.7891 },
+    googleMapsUrl: 'https://maps.google.com/?q=Sinkor+Monrovia+Liberia',
+    isMainCampus: false
+  },
+  {
+    id: 'BUSHROD-POST',
+    name: 'Bushrod Island Emergency Outreach Post',
+    tier: 'Urgent Care & Rapid Triage Post',
+    address: 'Somalia Drive, Near Freeport Gate',
+    community: 'Bushrod Island',
+    city: 'Monrovia',
+    phone: '+231 (0) 776-334-900',
+    emergencyHotline: '+231 (0) 770-JJ-MEM',
+    hours: 'Open 24 Hours Daily',
+    services: [
+      'Rapid Triage & Vitals Assessment',
+      'Minor Wound Debridement & Suturing',
+      'Malaria Rapid Diagnostic Testing (RDT)',
+      'Ambulance Direct Transfer to Main Campus',
+      'Emergency Essential Medicine Dispensary'
+    ],
+    powerGrid: 'Automatic Solar Inverter + Backup Generator',
+    coordinates: { lat: 6.3421, lng: -10.7952 },
+    googleMapsUrl: 'https://maps.google.com/?q=Bushrod+Island+Monrovia+Liberia',
+    isMainCampus: false
+  }
+];
 
 export const FacilityLocator: React.FC = () => {
-  const { t } = useTranslation();
-  const facilities = dbStore.getFacilities();
-  const [selectedId, setSelectedId] = useState<string>(facilities[0]?.id || '');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-
-  const filteredFacilities = facilities.filter((f) =>
-    f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.county.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.services.some((s) => s.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
-  const activeFacility = facilities.find((f) => f.id === selectedId) || facilities[0];
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('MAIN-VOA');
+  const activeBranch = BRANCHES.find(b => b.id === selectedBranchId) || BRANCHES[0];
 
   return (
-    <section className="py-20 bg-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-14 space-y-3">
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-bold uppercase tracking-wider">
-            <Compass className="w-3.5 h-3.5" />
-            <span>Campus & Branch Network</span>
+    <section className="py-16 bg-white border-t border-slate-200" id="locations">
+      <div className="max-w-7xl mx-auto px-4 space-y-12">
+        {/* Section Header */}
+        <div className="text-center max-w-2xl mx-auto space-y-3">
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-3 py-1 rounded-full">
+            <Building2 className="w-3.5 h-3.5 text-teal-700" />
+            <span>Facility Locator & Clinic Network</span>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-hospital-navy tracking-tight">
-            {t('facilityLocator')}
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Find the Nearest J & J Memorial Health Facility
           </h2>
-          <p className="text-slate-600 text-base">
-            Find the nearest J & J Memorial clinic branch, emergency room, or specialist outpatient facility across Montserrado and regional counties.
+          <p className="text-slate-600 text-sm leading-relaxed">
+            Convenient care accessible across greater Monrovia, with 24/7 acute trauma capability and seamless patient record integration across all branches.
           </p>
-
-          {/* Search Bar */}
-          <div className="max-w-md mx-auto pt-4 relative">
-            <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by branch name, county, or clinical service..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-            />
-          </div>
         </div>
 
-        {/* Interactive Grid & Map View */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Branch List (Left 5 Cols) */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Available Branches ({filteredFacilities.length})
-              </span>
-              <span className="text-xs text-teal-600 font-semibold">24/7 Ambulance Dispatch Available</span>
-            </div>
-
-            <div className="space-y-3 max-h-[580px] overflow-y-auto pr-1">
-              {filteredFacilities.map((facility) => {
-                const isSelected = facility.id === activeFacility.id;
-                return (
-                  <div
-                    key={facility.id}
-                    onClick={() => setSelectedId(facility.id)}
-                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-teal-50/60 border-teal-500 ring-1 ring-teal-500 shadow-sm'
-                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2">
-                          <h4 className="font-bold text-slate-900 text-sm">
-                            {facility.name}
-                          </h4>
-                          {facility.isMainCampus && (
-                            <span className="px-1.5 py-0.5 text-[10px] font-extrabold bg-hospital-navy text-white rounded">
-                              Main Campus
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-500 flex items-center gap-1">
-                          <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                          <span>{facility.address}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-                      <span className="flex items-center gap-1 font-medium text-emerald-600">
-                        <Clock className="w-3 h-3" />
-                        {facility.operatingHours}
-                      </span>
-                      <span className="text-teal-700 font-bold">{facility.county}</span>
-                    </div>
+        {/* Branch Selector Tabs */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {BRANCHES.map(branch => {
+            const isSelected = selectedBranchId === branch.id;
+            return (
+              <div
+                key={branch.id}
+                onClick={() => setSelectedBranchId(branch.id)}
+                className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                  isSelected
+                    ? 'border-teal-700 bg-teal-50/50 ring-2 ring-teal-700/20 shadow-sm'
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
+                      branch.isMainCampus ? 'bg-teal-800 text-white' : 'bg-slate-100 text-slate-700'
+                    }`}>
+                      {branch.isMainCampus ? 'Main Hospital' : 'Branch Clinic'}
+                    </span>
+                    <span className="text-xs text-emerald-700 font-semibold flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {branch.isMainCampus ? '24/7 Open' : 'Open'}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
 
-          {/* Interactive Map & Active Facility Detail (Right 7 Cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            {/* Visual Interactive Map Card */}
-            <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 h-64 sm:h-80 shadow-inner flex items-center justify-center">
-              {/* Simulated high-tech GPS grid map of Montserrado / Liberia */}
-              <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] opacity-70" />
-              
-              {/* Decorative Liberia coastal shoreline representation */}
-              <svg className="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 600 300">
-                <path
-                  d="M0,200 Q150,180 300,230 T600,260 L600,300 L0,300 Z"
-                  fill="#0d9488"
-                />
-                <text x="40" y="270" fill="#94a3b8" fontSize="12" fontFamily="monospace">ATLANTIC OCEAN (MONROVIA COASTLINE)</text>
-              </svg>
-
-              {/* Facility Markers */}
-              {facilities.map((f, idx) => {
-                const isSelected = f.id === activeFacility.id;
-                // Position markers dynamically across Monrovia map space
-                const positions = [
-                  { top: '40%', left: '48%' }, // Congo Town Main
-                  { top: '35%', left: '38%' }, // Sinkor
-                  { top: '48%', left: '60%' }, // Paynesville
-                  { top: '22%', left: '75%' }, // Kakata
-                ];
-                const pos = positions[idx % positions.length];
-
-                return (
-                  <div
-                    key={f.id}
-                    onClick={() => setSelectedId(f.id)}
-                    style={{ top: pos.top, left: pos.left }}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer group z-20"
-                  >
-                    <div className="relative flex items-center justify-center">
-                      {isSelected && (
-                        <span className="absolute w-8 h-8 rounded-full bg-teal-400 animate-ping opacity-75" />
-                      )}
-                      <div className={`p-2 rounded-full shadow-lg transition-transform group-hover:scale-125 ${
-                        isSelected ? 'bg-teal-500 text-slate-950 ring-4 ring-teal-400/30' : 'bg-hospital-navy text-white border border-slate-600'
-                      }`}>
-                        <MapPin className="w-4 h-4" />
-                      </div>
-                    </div>
-                    <div className="absolute left-1/2 -translate-x-1/2 mt-1.5 px-2 py-0.5 rounded bg-slate-950/90 text-white text-[10px] font-semibold whitespace-nowrap border border-slate-700 shadow-md">
-                      {f.name.split(' ')[2] || f.name}
-                    </div>
-                  </div>
-                );
-              })}
-
-              <div className="absolute bottom-3 right-3 bg-slate-950/80 backdrop-blur px-3 py-1 rounded-md text-[11px] text-slate-300 border border-slate-800 flex items-center gap-1.5">
-                <Navigation className="w-3.5 h-3.5 text-teal-400" />
-                <span>Interactive Geo-Grid (Lat {activeFacility.coordinates.lat}, Lng {activeFacility.coordinates.lng})</span>
-              </div>
-            </div>
-
-            {/* Detailed Info Card for Selected Branch */}
-            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
-                <div>
-                  <h3 className="text-xl font-bold text-hospital-navy">
-                    {activeFacility.name}
+                  <h3 className="font-extrabold text-base text-slate-900 leading-snug">
+                    {branch.name}
                   </h3>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    {activeFacility.address} &bull; {activeFacility.county}
+
+                  <p className="text-xs text-slate-500 flex items-start gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-teal-700 shrink-0 mt-0.5" />
+                    <span>{branch.address}</span>
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <a
-                    href={`tel:${activeFacility.emergencyHotline.split(' ')[0]}`}
-                    className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition"
-                  >
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>Call Hotline</span>
-                  </a>
+                <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-mono">{branch.phone}</span>
+                  <span className="text-teal-800 font-semibold flex items-center gap-1">
+                    <span>View Branch</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </span>
                 </div>
               </div>
+            );
+          })}
+        </div>
 
-              {/* Contact Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
-                  <span className="text-slate-400 font-semibold flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-teal-600" />
-                    Operating Hours
-                  </span>
-                  <div className="font-bold text-slate-800">{activeFacility.operatingHours}</div>
-                </div>
+        {/* Detailed Branch Overview & Interactive Map Showcase */}
+        <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-10 shadow-xl border border-slate-800 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          <div className="lg:col-span-7 space-y-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-teal-300 bg-teal-950 border border-teal-800 px-2.5 py-1 rounded-full">
+                {activeBranch.tier}
+              </span>
+              <span className="text-xs text-slate-400">
+                {activeBranch.city}, Liberia
+              </span>
+            </div>
 
-                <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
-                  <span className="text-slate-400 font-semibold flex items-center gap-1">
-                    <Phone className="w-3.5 h-3.5 text-teal-600" />
-                    Front Desk
-                  </span>
-                  <div className="font-bold text-slate-800">{activeFacility.phone}</div>
-                </div>
+            <h3 className="text-2xl sm:text-3xl font-extrabold text-white">
+              {activeBranch.name}
+            </h3>
 
-                <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
-                  <span className="text-slate-400 font-semibold flex items-center gap-1">
-                    <Mail className="w-3.5 h-3.5 text-teal-600" />
-                    Branch Email
-                  </span>
-                  <div className="font-bold text-slate-800 truncate">{activeFacility.email}</div>
-                </div>
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="flex items-center gap-3">
+                <MapPin className="w-4 h-4 text-teal-400 shrink-0" />
+                <span>{activeBranch.address}</span>
               </div>
-
-              {/* Services Offered */}
-              <div>
-                <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2.5">
-                  Available Clinical & Diagnostic Services
-                </h5>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {activeFacility.services.map((srv, idx) => (
-                    <div key={idx} className="flex items-center space-x-2 text-xs text-slate-700 bg-white px-3 py-1.5 rounded-lg border border-slate-200">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                      <span>{srv}</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex items-center gap-3">
+                <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="font-semibold text-emerald-300">{activeBranch.hours}</span>
               </div>
+              <div className="flex items-center gap-3">
+                <Phone className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>Emergency Hotline: <strong className="text-rose-300">{activeBranch.emergencyHotline}</strong></span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Zap className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Power Resilience: {activeBranch.powerGrid}</span>
+              </div>
+            </div>
+
+            {/* Department services pills */}
+            <div className="space-y-2 pt-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Key Services & Departments:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {activeBranch.services.map((srv, idx) => (
+                  <span key={idx} className="bg-slate-800 text-slate-200 border border-slate-700 text-[11px] px-2.5 py-1 rounded-lg">
+                    {srv}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-4 flex flex-wrap items-center gap-4">
+              <a
+                href={activeBranch.googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs px-5 py-3 rounded-lg flex items-center gap-2 shadow-md transition-all cursor-pointer"
+              >
+                <Navigation className="w-4 h-4" />
+                <span>Get Driving Directions (Google Maps)</span>
+              </a>
+
+              <a
+                href={`tel:${activeBranch.phone}`}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 font-semibold text-xs px-4 py-3 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Phone className="w-3.5 h-3.5 text-teal-400" />
+                <span>Call Reception</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Interactive Map Visual Mockup */}
+          <div className="lg:col-span-5 bg-slate-950 rounded-2xl border border-slate-800 p-6 flex flex-col justify-between h-80 relative overflow-hidden">
+            <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#2dd4bf_1px,transparent_1px)] [background-size:16px_16px]" />
+
+            <div className="relative flex justify-between items-center pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-teal-400" />
+                <span className="text-xs font-bold text-white">Monrovia Geospatial Grid</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400">
+                {activeBranch.coordinates.lat.toFixed(4)}°N, {activeBranch.coordinates.lng.toFixed(4)}°W
+              </span>
+            </div>
+
+            <div className="relative flex-1 flex flex-col items-center justify-center text-center p-4">
+              <div className="w-14 h-14 rounded-full bg-teal-900/60 border-2 border-teal-400 flex items-center justify-center text-teal-300 animate-bounce shadow-lg">
+                <MapPin className="w-7 h-7" />
+              </div>
+              <h4 className="font-bold text-sm text-white mt-3">{activeBranch.name}</h4>
+              <p className="text-xs text-slate-400 mt-1">{activeBranch.community}, Monrovia</p>
+            </div>
+
+            <div className="relative pt-2 border-t border-slate-800 flex justify-between text-[11px] text-slate-400">
+              <span>Ambulance Direct Link: Active</span>
+              <span className="text-emerald-400 font-semibold">Triage Open</span>
             </div>
           </div>
         </div>

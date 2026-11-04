@@ -1,374 +1,324 @@
 import React, { useState, useEffect } from 'react';
-import { offlineSyncService, SyncState } from '../../services/offlineSync';
-import { biometricAuthService } from '../../services/biometrics';
-import { UserRole } from '../../types';
-import { GlobalSearchBar } from './GlobalSearchBar';
-import { BiometricLockOverlay } from './BiometricLockOverlay';
-
-// Existing module imports
-import { TriageQueue } from './TriageQueue';
-import { BloodBankModule } from './BloodBankModule';
-import { PharmacyDashboard } from './PharmacyDashboard';
-import { LaboratoryResultsModule } from './LaboratoryResultsModule';
-import { RadiologyModule } from './RadiologyModule';
-import { BillingInvoicingModule } from './BillingInvoicingModule';
-import { InsuranceVerificationModule } from './InsuranceVerificationModule';
-import { ExecutiveIntelligence } from './ExecutiveIntelligence';
-import { PayrollAnalytics } from './PayrollAnalytics';
-import { ResourceManagement } from './ResourceManagement';
-import { StaffScheduling } from './StaffScheduling';
-import { HospitalDigitalSignage } from './HospitalDigitalSignage';
-import { ActivityFeed } from './ActivityFeed';
-import { InternalMessaging } from './InternalMessaging';
-import { PerformanceMonitoringPanel } from './PerformanceMonitoringPanel';
-
-// New OPD/EMR chart
-import { OPDEMRChart } from './OPDEMRChart';
-
-// New placeholder modules
-import {
-  CommandCenterHMIS,
-  InpatientADT,
-  GeneralLedger,
-  InventoryProcurement,
-  BiomedicalFacilities,
-  AuditTrailCompliance,
-  QualitySafetyIncidents,
-} from './NewModulePlaceholders';
-
-import {
-  TrendingUp,
-  Monitor,
-  Stethoscope,
-  HeartPulse,
-  Building2,
-  FlaskConical,
-  ScanLine,
-  Pill,
-  Receipt,
-  BookOpen,
-  Package,
-  Users,
-  CalendarDays,
-  Wrench,
-  Search as SearchIcon,
-  ShieldCheck,
-  AlertTriangle,
+import { 
+  Activity, 
+  Users, 
+  Stethoscope, 
+  HeartPulse, 
+  Bed, 
+  Microscope, 
+  Pill, 
+  DollarSign, 
+  BookOpen, 
+  Truck, 
+  Briefcase, 
+  Wrench, 
+  ShieldCheck, 
+  Zap, 
+  Server, 
+  LogOut, 
+  UserPlus, 
+  AlertCircle,
+  Key,
+  Search,
+  Bell,
   Wifi,
   WifiOff,
+  Database,
   RefreshCw,
-  Lock,
-  LogOut,
-  ChevronDown,
-  Droplets,
   Scan,
-  Calculator,
-  Layers,
+  TrendingUp,
   Calendar,
-  Tv,
-  Radio,
   MessageSquare,
-  Gauge,
+  Droplet,
+  Fingerprint,
+  Lock,
+  CreditCard,
+  Cpu
 } from 'lucide-react';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+import { getDatabaseState, updateDatabaseState, logAuditEvent, triggerBackgroundSync } from '../../services/storageService';
+import { indexedDbCache } from '../../services/indexedDbCacheService';
+import { UserAccount, UserRole } from '../../types/auth';
+import { Patient } from '../../types/patient';
 
-type ModuleKey =
-  | 'executive'
-  | 'command-center'
-  | 'opd-emr'
-  | 'triage'
-  | 'inpatient-adt'
-  | 'lab'
-  | 'radiology'
-  | 'pharmacy'
-  | 'billing'
-  | 'general-ledger'
-  | 'inventory'
-  | 'payroll'
-  | 'scheduling'
-  | 'biomedical'
-  | 'audit'
-  | 'quality'
-  | 'blood-bank'
-  | 'insurance'
-  | 'resources'
-  | 'signage'
-  | 'activity'
-  | 'messaging'
-  | 'performance';
-
-interface SidebarItem {
-  key: ModuleKey;
-  label: string;
-  icon: React.ReactNode;
-}
-
-const SIDEBAR_MODULES: SidebarItem[] = [
-  { key: 'executive',      label: 'Executive Intelligence (BI)',      icon: <TrendingUp className="w-4 h-4" /> },
-  { key: 'command-center', label: 'Command Center & HMIS',            icon: <Monitor className="w-4 h-4" /> },
-  { key: 'opd-emr',        label: 'Outpatient (OPD) & EMR',           icon: <Stethoscope className="w-4 h-4" /> },
-  { key: 'triage',         label: 'Triage & Nursing Vitals',          icon: <HeartPulse className="w-4 h-4" /> },
-  { key: 'inpatient-adt',  label: 'Inpatient Wards & Beds (ADT)',     icon: <Building2 className="w-4 h-4" /> },
-  { key: 'lab',            label: 'Diagnostic Laboratory (LIS)',       icon: <FlaskConical className="w-4 h-4" /> },
-  { key: 'radiology',      label: 'Radiology & Imaging (PACS)',       icon: <ScanLine className="w-4 h-4" /> },
-  { key: 'pharmacy',       label: 'Pharmacy & Drug Dispense',         icon: <Pill className="w-4 h-4" /> },
-  { key: 'billing',        label: 'Billing & Invoicing',              icon: <Receipt className="w-4 h-4" /> },
-  { key: 'general-ledger', label: 'General Ledger & Accounts',        icon: <BookOpen className="w-4 h-4" /> },
-  { key: 'inventory',      label: 'Inventory & Procurement',          icon: <Package className="w-4 h-4" /> },
-  { key: 'payroll',        label: 'HR, Staff & Payroll',              icon: <Users className="w-4 h-4" /> },
-  { key: 'scheduling',     label: 'Staff Scheduling & Rosters',       icon: <CalendarDays className="w-4 h-4" /> },
-  { key: 'biomedical',     label: 'Biomedical & Facilities',          icon: <Wrench className="w-4 h-4" /> },
-  { key: 'audit',          label: 'Audit Trail & Compliance',         icon: <SearchIcon className="w-4 h-4" /> },
-  { key: 'quality',        label: 'Quality & Safety Incidents',       icon: <AlertTriangle className="w-4 h-4" /> },
-  // Legacy modules still accessible
-  { key: 'blood-bank',     label: 'Blood Bank & Transfusions',        icon: <Droplets className="w-4 h-4" /> },
-  { key: 'insurance',      label: 'Insurance Verification',           icon: <ShieldCheck className="w-4 h-4" /> },
-  { key: 'resources',      label: 'Resource Conflict Mgmt',           icon: <Layers className="w-4 h-4" /> },
-  { key: 'signage',        label: 'Hospital TV Signage',              icon: <Tv className="w-4 h-4" /> },
-  { key: 'activity',       label: 'Activity Stream',                  icon: <Radio className="w-4 h-4" /> },
-  { key: 'messaging',      label: 'Internal Clinical Chat',           icon: <MessageSquare className="w-4 h-4" /> },
-  { key: 'performance',    label: 'API Performance Monitor',          icon: <Gauge className="w-4 h-4" /> },
-];
-
-// ─── Props ────────────────────────────────────────────────────────────────────
+import { RoleSwitcher } from './RoleSwitcher';
+import { ExecutiveCommandCenter } from './ExecutiveCommandCenter';
+import { ExecutiveIntelligenceDashboard } from './ExecutiveIntelligenceDashboard';
+import { ClinicalWorkstation } from './ClinicalWorkstation';
+import { TriageNursingWorkstation } from './TriageNursingWorkstation';
+import { InpatientADTWorkstation } from './InpatientADTWorkstation';
+import { LaboratoryWorkstation } from './LaboratoryWorkstation';
+import { RadiologyWorkstation } from './RadiologyWorkstation';
+import { PharmacyWorkstation } from './PharmacyWorkstation';
+import { BillingCashierWorkstation } from './BillingCashierWorkstation';
+import { GeneralLedgerWorkstation } from './GeneralLedgerWorkstation';
+import { ProcurementInventoryWorkstation } from './ProcurementInventoryWorkstation';
+import { HRPayrollWorkstation } from './HRPayrollWorkstation';
+import { StaffSchedulingWorkstation } from './StaffSchedulingWorkstation';
+import { AssetsFacilitiesWorkstation } from './AssetsFacilitiesWorkstation';
+import { QualityAuditWorkstation } from './QualityAuditWorkstation';
+import { AuditTrailWorkstation } from './AuditTrailWorkstation';
+import { StaffMessagingWorkstation } from './StaffMessagingWorkstation';
+import { BloodBankWorkstation } from './BloodBankWorkstation';
+import { ResourceManagementWorkstation } from './ResourceManagementWorkstation';
+import { InsuranceVerificationWorkstation } from './InsuranceVerificationWorkstation';
+import { GlobalStaffSearchModal } from './GlobalStaffSearchModal';
+import { BiometricLockOverlay } from './BiometricLockOverlay';
+import { PatientRegistrationModal } from './PatientRegistrationModal';
+import { DowntimeContinuityModal } from './DowntimeContinuityModal';
+import { DeploymentRunbookModal } from './DeploymentRunbookModal';
 
 interface StaffWorkspaceProps {
-  onGoHome: () => void;
-  onGoPatient: () => void;
-  isSearchOpen: boolean;
-  setIsSearchOpen: (open: boolean) => void;
+  onBackToPublicSite: () => void;
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSite }) => {
+  const db = getDatabaseState();
+  // Default to Dr. J. Saydee Kollie (Medical Director) or Dr. Evelyn Sirleaf-Gbotoe
+  const [currentUser, setCurrentUser] = useState<UserAccount>(db.users[1]); // Dr. Evelyn
+  const [activeModule, setActiveModule] = useState<string>('opd');
 
-export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
-  onGoHome,
-  onGoPatient,
-  isSearchOpen,
-  setIsSearchOpen,
-}) => {
-  const [syncState, setSyncState] = useState<SyncState>('online');
-  const [syncQueueCount, setSyncQueueCount] = useState<number>(0);
-  const [activeModule, setActiveModule] = useState<ModuleKey>('opd-emr');
-  const [activeRole, setActiveRole] = useState<UserRole>('doctor');
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+  // Offline & IndexedDB Caching Telemetry
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [simulateOffline, setSimulateOffline] = useState<boolean>(false);
+  const [isSyncingCache, setIsSyncingCache] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
 
-  const STAFF_NAME = 'Dr. Evelyn Sirleaf-Gbotoe, MD';
-  const STAFF_ROLE_LABEL = 'Attending Physician (OPD)';
+  // Listen to browser network changes
+  React.useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
 
-  // ── Offline Sync Subscription ──────────────────────────────────────────────
-  useEffect(() => {
-    return offlineSyncService.subscribe((state, count) => {
-      setSyncState(state);
-      setSyncQueueCount(count);
-    });
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial cache sync on workstation load
+    indexedDbCache.cacheStateToIndexedDB(db);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
-  // ── Close dropdowns on outside click ──────────────────────────────────────
-  useEffect(() => {
-    const handler = () => setRoleDropdownOpen(false);
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, []);
-
-  const handleLockTerminal = () => biometricAuthService.lock(STAFF_NAME);
-  const handleSimulateSync = () => offlineSyncService.processQueue();
-
-  // ── Active module label for secondary bar ─────────────────────────────────
-  const activeSidebarItem = SIDEBAR_MODULES.find((m) => m.key === activeModule);
-
-  // ── Render active module content ──────────────────────────────────────────
-  const renderModule = () => {
-    switch (activeModule) {
-      case 'executive':      return <ExecutiveIntelligence />;
-      case 'command-center': return <CommandCenterHMIS />;
-      case 'opd-emr':        return <OPDEMRChart />;
-      case 'triage':         return <TriageQueue />;
-      case 'inpatient-adt':  return <InpatientADT />;
-      case 'lab':            return <LaboratoryResultsModule />;
-      case 'radiology':      return <RadiologyModule />;
-      case 'pharmacy':       return <PharmacyDashboard />;
-      case 'billing':        return <BillingInvoicingModule />;
-      case 'general-ledger': return <GeneralLedger />;
-      case 'inventory':      return <InventoryProcurement />;
-      case 'payroll':        return <PayrollAnalytics />;
-      case 'scheduling':     return <StaffScheduling />;
-      case 'biomedical':     return <BiomedicalFacilities />;
-      case 'audit':          return <AuditTrailCompliance />;
-      case 'quality':        return <QualitySafetyIncidents />;
-      case 'blood-bank':     return <BloodBankModule />;
-      case 'insurance':      return <InsuranceVerificationModule />;
-      case 'resources':      return <ResourceManagement />;
-      case 'signage':        return <HospitalDigitalSignage />;
-      case 'activity':       return <ActivityFeed />;
-      case 'messaging':      return <InternalMessaging />;
-      case 'performance':    return <PerformanceMonitoringPanel />;
-      default:               return null;
-    }
+  const handleManualCacheSync = async () => {
+    setIsSyncingCache(true);
+    await indexedDbCache.cacheStateToIndexedDB(db);
+    setTimeout(() => {
+      setIsSyncingCache(false);
+      setLastSyncTime(new Date().toLocaleTimeString());
+    }, 400);
   };
 
+  const effectiveOnline = isOnline && !simulateOffline;
+
+  // Modals
+  const [showRegModal, setShowRegModal] = useState(false);
+  const [showDowntimeModal, setShowDowntimeModal] = useState(false);
+  const [showDeploymentModal, setShowDeploymentModal] = useState(false);
+  const [showBreakGlassModal, setShowBreakGlassModal] = useState(false);
+  const [showGlobalSearchModal, setShowGlobalSearchModal] = useState(false);
+  const [isTerminalLocked, setIsTerminalLocked] = useState(false);
+  const [isSyncingBackground, setIsSyncingBackground] = useState(false);
+  const [breakGlassReason, setBreakGlassReason] = useState('');
+
+  // Global Keyboard shortcuts: Ctrl+K for search, Ctrl+L for terminal lock
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowGlobalSearchModal(prev => !prev);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        setIsTerminalLocked(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleManualBackgroundSync = async () => {
+    setIsSyncingBackground(true);
+    await triggerBackgroundSync();
+    setIsSyncingBackground(false);
+    setLastSyncTime(new Date().toLocaleTimeString());
+  };
+
+  // Handle Break-Glass emergency access
+  const handleBreakGlassSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!breakGlassReason.trim()) {
+      alert('Clinical emergency justification is mandatory for break-glass override.');
+      return;
+    }
+
+    logAuditEvent({
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'BREAK_GLASS',
+      module: 'SECURITY',
+      details: `EMERGENCY BREAK-GLASS ACTIVATED by ${currentUser.fullName} (${currentUser.role}). Justification: ${breakGlassReason}. Audit flags dispatched.`,
+      ipAddress: 'Clinical Workstation Break-Glass Terminal',
+      status: 'FLAGGED',
+    });
+
+    alert('Break-glass emergency protocol recorded in immutable audit log. Full unhindered access unlocked.');
+    setShowBreakGlassModal(false);
+    setBreakGlassReason('');
+  };
+
+  const navItems = [
+    { id: 'messages', label: 'Internal Staff Comms', icon: MessageSquare },
+    { id: 'executive_bi', label: 'Executive Intelligence (BI)', icon: TrendingUp },
+    { id: 'command_center', label: 'Command Center & HMIS', icon: Activity },
+    { id: 'opd', label: 'Outpatient (OPD) & EMR', icon: Stethoscope },
+    { id: 'triage', label: 'Triage & Nursing Vitals', icon: HeartPulse },
+    { id: 'inpatient', label: 'Inpatient Wards & Beds (ADT)', icon: Bed },
+    { id: 'lab', label: 'Diagnostic Laboratory (LIS)', icon: Microscope },
+    { id: 'blood_bank', label: 'Blood Bank & Transfusion', icon: Droplet },
+    { id: 'radiology', label: 'Radiology & Imaging (PACS)', icon: Scan },
+    { id: 'resources', label: 'Equipment & Resources', icon: Cpu },
+    { id: 'pharmacy', label: 'Pharmacy & Drug Dispense', icon: Pill },
+    { id: 'insurance', label: 'Insurance Verification', icon: CreditCard },
+    { id: 'billing', label: 'Billing & Invoicing', icon: DollarSign },
+    { id: 'gl', label: 'General Ledger & Accounts', icon: BookOpen },
+    { id: 'procurement', label: 'Inventory & Procurement', icon: Truck },
+    { id: 'hr', label: 'HR, Staff & Payroll', icon: Briefcase },
+    { id: 'scheduling', label: 'Staff Scheduling & Rosters', icon: Calendar },
+    { id: 'assets', label: 'Biomedical & Facilities', icon: Wrench },
+    { id: 'audit_trail', label: 'Audit Trail & Compliance', icon: ShieldCheck },
+    { id: 'quality', label: 'Quality & Safety Incidents', icon: AlertCircle },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
-
-      {/* ════════════════════════════════════════════════════════════════════
-          TOP HEADER BAR — dark navy bg-[#0d1117]
-      ════════════════════════════════════════════════════════════════════ */}
-      <header className="bg-[#0d1117] text-white px-5 py-3 border-b border-slate-800 shadow-lg sticky top-0 z-40 no-print">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-
-          {/* ── Left: Logo & Identity ──────────────────────────────────── */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-teal-500 flex items-center justify-center flex-shrink-0 shadow">
-              {/* Teal cross */}
-              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white" xmlns="http://www.w3.org/2000/svg">
-                <rect x="10" y="2" width="4" height="20" rx="1" />
-                <rect x="2" y="10" width="20" height="4" rx="1" />
-              </svg>
+    <div className="min-h-screen bg-slate-100 flex flex-col">
+      {/* Top Staff Navigation Bar */}
+      <header className="sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-teal-800 flex items-center justify-center font-bold text-teal-200">
+              <Stethoscope className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-sm font-extrabold text-white leading-tight tracking-tight">J &amp; J Memorial</div>
-              <div className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">Staff Workspace</div>
-              <div className="text-[9px] text-slate-500 leading-none">Enterprise HIS, EMR &amp; Hospital ERP</div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-sm tracking-tight text-white">J & J Memorial</span>
+                <span className="text-[10px] bg-teal-950 text-teal-300 border border-teal-800 px-1.5 py-0.5 rounded font-mono font-bold">
+                  STAFF WORKSPACE
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400">Enterprise HIS, EMR & Hospital ERP</p>
             </div>
           </div>
 
-          {/* ── Center: 5 Action Buttons ───────────────────────────────── */}
-          <div className="flex items-center gap-2 flex-wrap justify-center">
+          {/* Quick Action Controls */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Global Search Button */}
+            <button
+              onClick={() => setShowGlobalSearchModal(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-colors cursor-pointer"
+              title="Global EMR Search (Ctrl+K)"
+            >
+              <Search className="w-3.5 h-3.5 text-teal-400" />
+              <span className="hidden sm:inline">Search</span>
+              <kbd className="hidden md:inline font-mono text-[9px] bg-slate-900 text-teal-300 px-1 py-0.5 rounded border border-slate-700">
+                ⌘K
+              </kbd>
+            </button>
 
-            {/* VOA East Link */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded-lg text-xs">
-              <span className="text-slate-300">🔗</span>
-              <span className="text-slate-300 font-medium">VOA East Link:</span>
-              <span className="flex items-center gap-1 text-emerald-400 font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
-                Online
+            {/* Background Sync Pulse Indicator */}
+            <button
+              onClick={handleManualBackgroundSync}
+              disabled={isSyncingBackground}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                isSyncingBackground
+                  ? 'bg-teal-950 text-teal-300 border-teal-700 animate-pulse'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
+              title="Background EMR Cloud Sync Service"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-teal-400 ${isSyncingBackground ? 'animate-spin' : ''}`} />
+              <span className="hidden lg:inline">
+                {isSyncingBackground ? 'Pushing Cached EMR...' : 'Background Sync'}
+              </span>
+            </button>
+
+            {/* Biometric Terminal Lock */}
+            <button
+              onClick={() => setIsTerminalLocked(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+              title="Lock Workstation Terminal (Ctrl+L)"
+            >
+              <Fingerprint className="w-3.5 h-3.5 text-teal-400" />
+              <span className="hidden sm:inline">Lock</span>
+            </button>
+
+            {/* Offline Telemetry Badge */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${
+              effectiveOnline 
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800' 
+                : 'bg-amber-950/90 text-amber-300 border-amber-700'
+            }`}>
+              {effectiveOnline ? (
+                <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <WifiOff className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              )}
+              <span className="hidden lg:inline">
+                {effectiveOnline ? 'VOA East Link: Online' : 'VOA East Link: Offline Cache'}
               </span>
             </div>
 
-            {/* Register Patient */}
+            {/* Quick Patient Registration */}
             <button
-              onClick={() => setIsSearchOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 border border-teal-600 rounded-lg text-xs text-white font-semibold hover:bg-teal-900/40 transition"
+              onClick={() => setShowRegModal(true)}
+              className="bg-teal-700 hover:bg-teal-600 text-white font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
             >
-              <span>➕</span> Register Patient (MRN)
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>+ Register Patient</span>
             </button>
 
             {/* Break-Glass */}
             <button
-              onClick={() => window.alert('⚠️ BREAK-GLASS INVOKED\n\nThis action is being logged and audited per HIPAA policy. Authorized emergency access to restricted patient records.\n\nAll access will be reviewed by the Compliance Officer within 24 hours.')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 border border-rose-600 rounded-lg text-xs text-rose-400 font-semibold hover:bg-rose-950/40 transition"
+              onClick={() => setShowBreakGlassModal(true)}
+              className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+              title="Break-Glass Emergency Chart Access"
             >
-              <span>💔</span> Break-Glass
+              <Key className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden sm:inline">Break-Glass</span>
             </button>
 
-            {/* Outage / Downtime */}
+            {/* Downtime Resilience */}
             <button
-              onClick={() => window.alert('⚡ OUTAGE / DOWNTIME PROTOCOL ACTIVATED\n\nSwitching to paper-based downtime procedures. All clinical staff should follow the Downtime SOP in the red binder at the nursing station.\n\nIT has been notified. Estimated restoration: TBD.')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 border border-amber-500 rounded-lg text-xs text-amber-400 font-semibold hover:bg-amber-950/40 transition"
+              onClick={() => setShowDowntimeModal(true)}
+              className="bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-800 font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
             >
-              <span>⚡</span> Outage / Downtime
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Outage / Downtime</span>
             </button>
 
-            {/* Hostinger & Git Runbook */}
+            {/* Deployment Runbook (Hostinger & GitHub) */}
             <button
-              onClick={() => window.open('https://github.com', '_blank')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded-lg text-xs text-slate-400 font-semibold hover:bg-slate-800 transition"
+              onClick={() => setShowDeploymentModal(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
             >
-              <span>📋</span> Hostinger &amp; Git Runbook
-            </button>
-          </div>
-
-          {/* ── Right: Staff Info + Logout ─────────────────────────────── */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-
-            {/* Sync indicator */}
-            <button
-              onClick={handleSimulateSync}
-              title="Click to force background sync"
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition ${
-                syncState === 'syncing'
-                  ? 'bg-amber-950/80 border-amber-600 text-amber-300 animate-pulse'
-                  : syncState === 'offline'
-                  ? 'bg-rose-950/80 border-rose-600 text-rose-300'
-                  : 'bg-slate-900/90 border-slate-700 text-emerald-400'
-              }`}
-            >
-              {syncState === 'syncing' ? (
-                <><RefreshCw className="w-3 h-3 animate-spin" /><span>Syncing ({syncQueueCount})</span></>
-              ) : syncState === 'offline' ? (
-                <><WifiOff className="w-3 h-3" /><span>Offline</span></>
-              ) : (
-                <><Wifi className="w-3 h-3" /><span>Online</span></>
-              )}
+              <Server className="w-3.5 h-3.5 text-teal-400" />
+              <span className="hidden sm:inline">Hostinger & Git Runbook</span>
             </button>
 
-            {/* Staff badge + dropdown */}
-            <div className="relative" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => setRoleDropdownOpen((p) => !p)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded-lg hover:bg-slate-800 transition"
-              >
-                <span className="text-sm">🩺</span>
-                <div className="text-left">
-                  <div className="text-xs font-bold text-white leading-tight">{STAFF_NAME}</div>
-                  <div className="text-[10px] text-teal-400 font-semibold">{STAFF_ROLE_LABEL}</div>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-              </button>
+            {/* Role Switcher */}
+            <RoleSwitcher
+              currentUser={currentUser}
+              allUsers={db.users}
+              onSelectUser={u => setCurrentUser(u)}
+            />
 
-              {roleDropdownOpen && (
-                <div className="absolute right-0 mt-2 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl w-64 py-2 text-slate-700">
-                  <div className="px-4 py-2 border-b border-slate-100">
-                    <p className="text-xs font-bold text-slate-800">{STAFF_NAME}</p>
-                    <p className="text-[11px] text-teal-600 font-semibold">{STAFF_ROLE_LABEL}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Workstation: OPD-BAY-01</p>
-                  </div>
-                  <div className="py-1">
-                    <p className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Switch Context</p>
-                    {(
-                      [
-                        { role: 'doctor' as UserRole, label: 'Physician / Clinician' },
-                        { role: 'nurse' as UserRole, label: 'Triage & OPD Nurse' },
-                        { role: 'pharmacist' as UserRole, label: 'Pharmacist' },
-                        { role: 'lab_tech' as UserRole, label: 'Laboratory Technician' },
-                        { role: 'radiologist' as UserRole, label: 'Radiologist' },
-                        { role: 'cashier' as UserRole, label: 'Cashier & Billing' },
-                        { role: 'executive' as UserRole, label: 'Chief Executive / Medical Dir' },
-                      ] as { role: UserRole; label: string }[]
-                    ).map(({ role, label }) => (
-                      <button
-                        key={role}
-                        onClick={() => { setActiveRole(role); setRoleDropdownOpen(false); }}
-                        className={`w-full text-left px-4 py-2 text-xs hover:bg-teal-50 transition ${activeRole === role ? 'font-bold text-teal-700' : ''}`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="border-t border-slate-100 pt-2 pb-1">
-                    <button
-                      onClick={() => { handleLockTerminal(); setRoleDropdownOpen(false); }}
-                      className="w-full text-left px-4 py-2 text-xs text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition"
-                    >
-                      <Lock className="w-3.5 h-3.5" /> Lock Terminal
-                    </button>
-                    <button
-                      onClick={() => { onGoHome(); setRoleDropdownOpen(false); }}
-                      className="w-full text-left px-4 py-2 text-xs text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition"
-                    >
-                      <LogOut className="w-3.5 h-3.5" /> Sign Out / Public Site
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Lock Terminal icon button */}
+            {/* Back to Public Hospital Website */}
             <button
-              onClick={handleLockTerminal}
-              title="Lock Terminal (WebAuthn Biometric Security)"
-              className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-teal-400 hover:text-white border border-slate-700 transition"
+              onClick={onBackToPublicSite}
+              className="text-slate-400 hover:text-white p-1.5 transition-colors cursor-pointer"
+              title="Return to Public Patient Website"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -376,119 +326,249 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
         </div>
       </header>
 
-      {/* ════════════════════════════════════════════════════════════════════
-          SECONDARY BAR — slightly lighter dark
-      ════════════════════════════════════════════════════════════════════ */}
-      <div className="bg-[#161b22] border-b border-slate-800 px-5 py-2 flex items-center justify-between no-print sticky top-[61px] z-30">
-        <div className="flex items-center gap-2 text-xs text-slate-300">
-          <Lock className="w-3.5 h-3.5 text-teal-400" />
-          <span className="font-semibold">{STAFF_NAME}</span>
-          <span className="text-slate-500">·</span>
-          <span className="text-slate-400">{STAFF_ROLE_LABEL}</span>
-          {activeSidebarItem && (
-            <>
-              <span className="text-slate-600 mx-1">/</span>
-              <span className="text-teal-400 font-bold">{activeSidebarItem.label}</span>
-            </>
-          )}
-          <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+      {/* Offline Status & VOA East Continuity Banner */}
+      {!effectiveOnline && (
+        <div className="bg-amber-600 text-white px-4 py-2.5 text-xs shadow-sm">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <WifiOff className="w-4 h-4 text-amber-200 shrink-0 animate-pulse" />
+              <span>
+                <strong>VOA East Intermittent Connectivity Detected:</strong> Operating from local IndexedDB cache ({db.patients.length} patient charts, encounters, and pharmacy formulary loaded locally). Clinical care uninterrupted.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] bg-amber-800 text-amber-100 px-2 py-0.5 rounded font-mono font-bold">
+                AUTO-SYNC QUEUED
+              </span>
+              {simulateOffline && (
+                <button
+                  onClick={() => setSimulateOffline(false)}
+                  className="bg-white text-amber-900 font-bold px-2 py-0.5 rounded text-[11px] hover:bg-amber-50 cursor-pointer"
+                >
+                  Restore Online
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-        <button
-          onClick={onGoHome}
-          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Exit to Public Site</span>
-        </button>
-      </div>
+      )}
 
-      {/* ════════════════════════════════════════════════════════════════════
-          BODY: Sidebar + Main Content
-      ════════════════════════════════════════════════════════════════════ */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Main Workspace Body with Responsive Navigation */}
+      <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex flex-col md:flex-row gap-6">
+        {/* Module Sidebar */}
+        <aside className="w-full md:w-64 shrink-0 space-y-3">
+          <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block px-2 mb-2">
+              Clinical & ERP Modules
+            </span>
 
-        {/* ── SIDEBAR ─────────────────────────────────────────────────── */}
-        <aside className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 overflow-y-auto sticky top-[101px] h-[calc(100vh-101px)]">
-          <div className="px-4 pt-5 pb-2">
-            <p className="text-[10px] font-black uppercase tracking-widest text-teal-600 px-2">
-              Clinical &amp; ERP Modules
-            </p>
+            <nav className="space-y-1">
+              {navItems.map(item => {
+                const Icon = item.icon;
+                const isActive = activeModule === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveModule(item.id)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer ${
+                      isActive
+                        ? 'bg-teal-800 text-white shadow-xs font-semibold'
+                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-teal-200' : 'text-slate-500'}`} />
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
           </div>
 
-          <nav className="flex-1 px-3 pb-3 space-y-0.5">
-            {SIDEBAR_MODULES.map((item) => {
-              const isActive = activeModule === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setActiveModule(item.key)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition group ${
-                    isActive
-                      ? 'bg-teal-600 text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-teal-50 hover:text-teal-700'
-                  }`}
-                >
-                  <span className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-teal-600'}`}>
-                    {item.icon}
-                  </span>
-                  <span className="leading-tight">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+          {/* VOA East IndexedDB Offline Resiliency Card */}
+          <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2.5 text-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <span className="font-bold text-slate-900 text-[11px] flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-teal-700" />
+                IndexedDB Local Cache
+              </span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                effectiveOnline ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {effectiveOnline ? 'Synced' : 'Offline Active'}
+              </span>
+            </div>
 
-          {/* ── Offline Sync Indicator ─────────────────────────────────── */}
-          <div className="px-4 py-4 border-t border-slate-100">
-            <button
-              onClick={handleSimulateSync}
-              title="IndexedDB Local Cache — Click to sync"
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
-                syncState === 'syncing'
-                  ? 'bg-amber-50 border-amber-200 text-amber-700'
-                  : syncState === 'offline'
-                  ? 'bg-rose-50 border-rose-200 text-rose-700'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-              }`}
-            >
-              {syncState === 'syncing' ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-                  <span>Syncing… ({syncQueueCount} records)</span>
-                </>
-              ) : syncState === 'offline' ? (
-                <>
-                  <WifiOff className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>Offline · {syncQueueCount} cached</span>
-                </>
-              ) : (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
-                  <span>IndexedDB Local Cache · Synced</span>
-                </>
-              )}
-            </button>
-            <p className="text-[9px] text-slate-400 text-center mt-1.5">
-              Click to force background sync
-            </p>
+            <div className="space-y-1 text-[11px] text-slate-600">
+              <div className="flex justify-between">
+                <span>Cached Patients:</span>
+                <strong className="text-slate-900">{db.patients.length} charts</strong>
+              </div>
+              <div className="flex justify-between">
+                <span>Encounters / Vitals:</span>
+                <strong className="text-slate-900">{db.encounters.length} / {db.vitals.length}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span>Drug Formulary:</span>
+                <strong className="text-slate-900">{db.inventory.length} items</strong>
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-400 pt-1">
+                <span>Last Snapshot:</span>
+                <span>{lastSyncTime}</span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
+              <button
+                onClick={handleManualCacheSync}
+                disabled={isSyncingCache}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-semibold py-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <RefreshCw className={`w-3 h-3 text-slate-600 ${isSyncingCache ? 'animate-spin' : ''}`} />
+                <span>{isSyncingCache ? 'Caching to IndexedDB...' : 'Sync IndexedDB Now'}</span>
+              </button>
+              <button
+                onClick={() => setSimulateOffline(!simulateOffline)}
+                className={`w-full text-[11px] font-semibold py-1.5 rounded-lg border transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  simulateOffline 
+                    ? 'bg-amber-50 text-amber-900 border-amber-300' 
+                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                }`}
+              >
+                {simulateOffline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                <span>{simulateOffline ? 'End Offline Simulation' : 'Simulate VOA East Offline'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Infrastructure Health Card */}
+          <div className="bg-slate-900 text-slate-300 rounded-xl p-4 border border-slate-800 text-[11px] space-y-2">
+            <div className="flex items-center justify-between font-bold text-white text-xs">
+              <span>Facility Telemetry</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+            <div className="text-slate-400">
+              Grid Status: <strong className="text-emerald-400">Online</strong>
+            </div>
+            <div className="text-slate-400">
+              Cummins 500kVA: <strong className="text-slate-200">Standby (88% Diesel)</strong>
+            </div>
+            <div className="text-slate-400">
+              Facility Address: <strong className="text-slate-200">VOA East Community, Monrovia</strong>
+            </div>
+            <div className="text-slate-400">
+              Dual Currency: <strong className="text-teal-300">USD & 195 LRD</strong>
+            </div>
           </div>
         </aside>
 
-        {/* ── MAIN CONTENT ─────────────────────────────────────────────── */}
-        <main className="flex-1 overflow-y-auto bg-slate-50">
-          {renderModule()}
+        {/* Dynamic Workspace Workstation View */}
+        <main className="flex-1 min-w-0">
+          {activeModule === 'messages' && <StaffMessagingWorkstation currentUser={currentUser} />}
+          {activeModule === 'executive_bi' && <ExecutiveIntelligenceDashboard />}
+          {activeModule === 'command_center' && <ExecutiveCommandCenter />}
+          {activeModule === 'opd' && <ClinicalWorkstation currentUser={currentUser} />}
+          {activeModule === 'triage' && <TriageNursingWorkstation currentUser={currentUser} />}
+          {activeModule === 'inpatient' && <InpatientADTWorkstation currentUser={currentUser} />}
+          {activeModule === 'lab' && <LaboratoryWorkstation currentUser={currentUser} />}
+          {activeModule === 'blood_bank' && <BloodBankWorkstation currentUser={currentUser} />}
+          {activeModule === 'radiology' && <RadiologyWorkstation currentUser={currentUser} />}
+          {activeModule === 'resources' && <ResourceManagementWorkstation currentUser={currentUser} />}
+          {activeModule === 'pharmacy' && <PharmacyWorkstation currentUser={currentUser} />}
+          {activeModule === 'insurance' && <InsuranceVerificationWorkstation currentUser={currentUser} />}
+          {activeModule === 'billing' && <BillingCashierWorkstation currentUser={currentUser} />}
+          {activeModule === 'gl' && <GeneralLedgerWorkstation currentUser={currentUser} />}
+          {activeModule === 'procurement' && <ProcurementInventoryWorkstation currentUser={currentUser} />}
+          {activeModule === 'hr' && <HRPayrollWorkstation currentUser={currentUser} />}
+          {activeModule === 'scheduling' && <StaffSchedulingWorkstation currentUser={currentUser} />}
+          {activeModule === 'assets' && <AssetsFacilitiesWorkstation currentUser={currentUser} />}
+          {activeModule === 'audit_trail' && <AuditTrailWorkstation currentUser={currentUser} />}
+          {activeModule === 'quality' && <QualityAuditWorkstation currentUser={currentUser} />}
         </main>
       </div>
 
-      {/* ── Global Modals ─────────────────────────────────────────────────── */}
-      <GlobalSearchBar
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        onSelectPatient={(p) => {
-          alert(`Loaded EMR Record for: ${p.name} (MRN: ${p.mrn})`);
+      {/* Modals */}
+      <PatientRegistrationModal
+        isOpen={showRegModal}
+        onClose={() => setShowRegModal(false)}
+        currentUser={currentUser}
+        onRegisteredSuccess={p => {
+          // Handled inside modal with printable slip
         }}
       />
 
-      <BiometricLockOverlay />
+      <DowntimeContinuityModal
+        isOpen={showDowntimeModal}
+        onClose={() => setShowDowntimeModal(false)}
+        currentUser={currentUser}
+      />
+
+      <DeploymentRunbookModal
+        isOpen={showDeploymentModal}
+        onClose={() => setShowDeploymentModal(false)}
+      />
+
+      {/* Global Staff EMR Search Modal */}
+      <GlobalStaffSearchModal
+        isOpen={showGlobalSearchModal}
+        onClose={() => setShowGlobalSearchModal(false)}
+        onSelectPatient={p => {
+          // Navigates directly to patient
+        }}
+        onNavigateModule={m => setActiveModule(m)}
+      />
+
+      {/* Biometric Terminal Lock Overlay */}
+      <BiometricLockOverlay
+        currentUser={currentUser}
+        isLocked={isTerminalLocked}
+        onUnlock={() => setIsTerminalLocked(false)}
+      />
+
+      {/* Break-Glass Emergency Modal */}
+      {showBreakGlassModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border-2 border-rose-300">
+            <div className="flex items-center gap-2 text-rose-800">
+              <Key className="w-5 h-5 text-rose-600" />
+              <h3 className="font-extrabold text-base">Break-Glass Emergency Chart Override</h3>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Break-glass temporarily bypasses standard department restrictions for acute trauma or unconscious patient resuscitation. Every access is timestamped and forwarded to the Medical Director and Internal Auditor.
+            </p>
+
+            <form onSubmit={handleBreakGlassSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Clinical Emergency Justification *</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={breakGlassReason}
+                  onChange={e => setBreakGlassReason(e.target.value)}
+                  placeholder="e.g. Unconscious acute trauma victim requiring immediate life-support chart review..."
+                  className="w-full text-xs border border-rose-300 rounded-lg p-2.5 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBreakGlassModal(false)}
+                  className="text-xs text-slate-600 hover:text-slate-900 px-3 py-1.5"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors cursor-pointer"
+                >
+                  Confirm Break-Glass Override
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
