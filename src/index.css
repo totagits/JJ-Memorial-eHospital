@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased font-sans;
+    min-height: 100vh;
+  }
+}
+
+/* Custom scrollbars for high-density EMR lists */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Specialized CSS Print Layout for Billing & Invoicing Module */
+@media print {
+  /* Hide all interactive, navigation, header, sidebar elements */
+  .no-print,
+  nav,
+  header,
+  aside,
+  footer,
+  button,
+  .toast,
+  .modal-backdrop {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* Receipt printable area */
+  .receipt-print-container {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 20mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+  }
+
+  .receipt-table th,
+  .receipt-table td {
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding: 8px 4px !important;
+  }
+
+  @page {
+    size: auto;
+    margin: 10mm;
+  }
+}
+
+/* Pulsing Status Animation for Offline Sync indicator */
+@keyframes syncPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.15);
+  }
+}
+
+.animate-sync-pulse {
+  animation: syncPulse 1.5s infinite ease-in-out;
+}
