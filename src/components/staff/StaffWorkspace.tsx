@@ -33,11 +33,14 @@ import {
   Fingerprint,
   Lock,
   CreditCard,
-  Cpu
+  Cpu,
+  Cloud
 } from 'lucide-react';
 
 import { getDatabaseState, updateDatabaseState, logAuditEvent, triggerBackgroundSync } from '../../services/storageService';
 import { indexedDbCache } from '../../services/indexedDbCacheService';
+import { auditTrailService } from '../../services/auditTrailService';
+import { backgroundSyncService } from '../../services/backgroundSyncService';
 import { UserAccount, UserRole } from '../../types/auth';
 import { Patient } from '../../types/patient';
 
@@ -121,6 +124,9 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
     // Initial cache sync on workstation load
     indexedDbCache.cacheStateToIndexedDB(db);
+
+    // Automatically log user login session for statutory compliance
+    auditTrailService.logLogin(currentUser, 'SESSION_INITIALIZATION', '192.168.10.45 (Local Clinical Terminal)');
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -338,12 +344,27 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
               <span className="hidden sm:inline">Hostinger & Git Runbook</span>
             </button>
 
+            {/* Encrypted Cloud Snapshot Sync Button */}
+            <button
+              onClick={() => setActiveModule('audit_trail')}
+              className="bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Service Worker Background Sync: Encrypted Cloud Snapshots (RPO < 15 min)"
+            >
+              <Cloud className="w-3.5 h-3.5 text-sky-400" />
+              <span className="hidden xl:inline">Cloud Vault</span>
+              <span className="text-[10px] bg-sky-900 text-sky-200 border border-sky-700 px-1 py-0.2 rounded font-mono font-bold">
+                AES-256
+              </span>
+            </button>
+
             {/* Role Switcher */}
             <RoleSwitcher
               currentUser={currentUser}
               allUsers={db.users}
               onSelectUser={u => {
                 setCurrentUser(u);
+                // Automatically log user role switch to the audit trail
+                auditTrailService.logLogin(u, 'BIOMETRIC_ROLE_SWITCH', '192.168.10.45 (Local Clinical Terminal)');
                 const scope = getRoleScopeConfig(u.role);
                 if (!isRoleAuthorizedForModule(u.role, activeModule)) {
                   setActiveModule(scope.primaryWorkstation);

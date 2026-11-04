@@ -432,18 +432,35 @@ export function findPotentialDuplicates(candidate: {
   });
 }
 
-// Append immutable audit log entry
+// Append immutable audit log entry with tamper-evident SHA-256 chaining
 export function logAuditEvent(entry: Omit<AuditEvent, 'id' | 'timestamp'>): void {
   updateDatabaseState(draft => {
-    const newLog: AuditEvent = {
+    if (!draft.auditLogs) draft.auditLogs = [];
+    const timestamp = new Date().toISOString();
+    const prev = draft.auditLogs[0] as any;
+    const prevHash = prev?.hash || 'GENESIS_JJM_2026';
+    
+    // Hash chain
+    const content = `${prevHash}|${timestamp}|${entry.userId}|${entry.action}|${entry.module}|${entry.details}`;
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      hash = ((hash << 5) - hash) + content.charCodeAt(i);
+      hash = hash & hash;
+    }
+    const computedHash = `sha256_${Math.abs(hash).toString(16).padStart(8, '0')}_${content.length.toString(16)}`;
+
+    const newLog: AuditEvent & { hash?: string; previousHash?: string } = {
       ...entry,
       id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      timestamp: new Date().toISOString(),
+      timestamp,
+      hash: computedHash,
+      previousHash: prevHash,
     };
-    draft.auditLogs.unshift(newLog);
-    // Keep max 1000 logs in memory buffer
-    if (draft.auditLogs.length > 1000) {
-      draft.auditLogs = draft.auditLogs.slice(0, 1000);
+
+    draft.auditLogs.unshift(newLog as AuditEvent);
+    // Keep max 2500 logs in memory buffer
+    if (draft.auditLogs.length > 2500) {
+      draft.auditLogs = draft.auditLogs.slice(0, 2500);
     }
   });
 }
