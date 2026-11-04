@@ -288,13 +288,13 @@ export const RBACService = {
  * withRoleAccess Higher-Order Component (HOC)
  * Wraps staff workstation modules to enforce RBAC permissions before rendering.
  */
-export function withRoleAccess<P extends { currentUser?: UserAccount }>(
+export function withRoleAccess<P extends object = {}>(
   WrappedComponent: React.ComponentType<P>,
   moduleId: string,
   requiredLevel: AccessLevel = 'READ',
   moduleName?: string
-): React.FC<P & { onBreakGlass?: () => void }> {
-  const ComponentWithRoleAccess: React.FC<P & { onBreakGlass?: () => void }> = (props) => {
+): React.FC<P & { currentUser?: UserAccount; onBreakGlass?: () => void }> {
+  const ComponentWithRoleAccess: React.FC<P & { currentUser?: UserAccount; onBreakGlass?: () => void }> = (props) => {
     const { currentUser, onBreakGlass, ...rest } = props;
     const hasPermission = RBACService.hasAccess(currentUser, moduleId, requiredLevel);
 

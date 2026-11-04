@@ -92,6 +92,8 @@ const SecureAssetsWorkstation = withRoleAccess(AssetsFacilitiesWorkstation, 'ass
 const SecureAuditTrailWorkstation = withRoleAccess(AuditTrailWorkstation, 'audit_trail', 'READ', 'Audit Trail & Compliance');
 const SecureQualityWorkstation = withRoleAccess(QualityAuditWorkstation, 'quality', 'READ', 'Quality & Safety Incidents');
 const SecureMessagingWorkstation = withRoleAccess(StaffMessagingWorkstation, 'messages', 'READ', 'Internal Staff Comms');
+const SecureExecutiveBIDashboard = withRoleAccess(ExecutiveIntelligenceDashboard, 'executive_bi', 'READ', 'Executive BI & Analytics');
+const SecureCommandCenter = withRoleAccess(ExecutiveCommandCenter, 'command_center', 'READ', 'Facility Command Center');
 
 interface StaffWorkspaceProps {
   onBackToPublicSite: () => void;
@@ -554,8 +556,8 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
           {/* Workstation Modules Protected by withRoleAccess HOC */}
           {activeModule === 'messages' && <SecureMessagingWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
-          {activeModule === 'executive_bi' && <ExecutiveIntelligenceDashboard />}
-          {activeModule === 'command_center' && <ExecutiveCommandCenter />}
+          {activeModule === 'executive_bi' && <SecureExecutiveBIDashboard currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'command_center' && <SecureCommandCenter currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
           {activeModule === 'opd' && <SecureClinicalWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
           {activeModule === 'triage' && <SecureTriageWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
           {activeModule === 'inpatient' && <SecureInpatientWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
