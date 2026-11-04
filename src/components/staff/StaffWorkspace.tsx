@@ -70,6 +70,28 @@ import { DeploymentRunbookModal } from './DeploymentRunbookModal';
 import { isRoleAuthorizedForModule, getRoleScopeConfig } from '../../types/rbac';
 import { RbacAccessBoundary } from './RbacAccessBoundary';
 import { RoleAnalyticsPanel } from './RoleAnalyticsPanel';
+import { RBACService, withRoleAccess } from '../../services/rbacService';
+import { UserRoleDashboard } from './UserRoleDashboard';
+
+// Wrapped Workstation Components with withRoleAccess HOC
+const SecureClinicalWorkstation = withRoleAccess(ClinicalWorkstation, 'opd', 'READ', 'Outpatient (OPD) & EMR');
+const SecureTriageWorkstation = withRoleAccess(TriageNursingWorkstation, 'triage', 'READ', 'Triage & Nursing Vitals');
+const SecureInpatientWorkstation = withRoleAccess(InpatientADTWorkstation, 'inpatient', 'READ', 'Inpatient Wards & Beds');
+const SecureLabWorkstation = withRoleAccess(LaboratoryWorkstation, 'lab', 'READ', 'Diagnostic Laboratory');
+const SecureBloodBankWorkstation = withRoleAccess(BloodBankWorkstation, 'blood_bank', 'READ', 'Blood Bank & Transfusion');
+const SecureRadiologyWorkstation = withRoleAccess(RadiologyWorkstation, 'radiology', 'READ', 'Radiology & Imaging');
+const SecureResourceWorkstation = withRoleAccess(ResourceManagementWorkstation, 'resources', 'READ', 'Equipment & Resources');
+const SecurePharmacyWorkstation = withRoleAccess(PharmacyWorkstation, 'pharmacy', 'READ', 'Pharmacy & Drug Dispense');
+const SecureInsuranceWorkstation = withRoleAccess(InsuranceVerificationWorkstation, 'insurance', 'READ', 'Insurance Verification');
+const SecureBillingWorkstation = withRoleAccess(BillingCashierWorkstation, 'billing', 'READ', 'Billing & Invoicing');
+const SecureGLWorkstation = withRoleAccess(GeneralLedgerWorkstation, 'gl', 'READ', 'General Ledger & Accounts');
+const SecureProcurementWorkstation = withRoleAccess(ProcurementInventoryWorkstation, 'procurement', 'READ', 'Inventory & Procurement');
+const SecureHRPayrollWorkstation = withRoleAccess(HRPayrollWorkstation, 'hr', 'READ', 'HR, Staff & Payroll');
+const SecureSchedulingWorkstation = withRoleAccess(StaffSchedulingWorkstation, 'scheduling', 'READ', 'Staff Scheduling & Rosters');
+const SecureAssetsWorkstation = withRoleAccess(AssetsFacilitiesWorkstation, 'assets', 'READ', 'Biomedical & Facilities');
+const SecureAuditTrailWorkstation = withRoleAccess(AuditTrailWorkstation, 'audit_trail', 'READ', 'Audit Trail & Compliance');
+const SecureQualityWorkstation = withRoleAccess(QualityAuditWorkstation, 'quality', 'READ', 'Quality & Safety Incidents');
+const SecureMessagingWorkstation = withRoleAccess(StaffMessagingWorkstation, 'messages', 'READ', 'Internal Staff Comms');
 
 interface StaffWorkspaceProps {
   onBackToPublicSite: () => void;
@@ -518,50 +540,39 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
         {/* Dynamic Workspace Workstation View */}
         <main className="flex-1 min-w-0 space-y-6">
+          {/* UserRoleDashboard: Dedicated role-specific analytics cards for every staff member */}
+          <UserRoleDashboard
+            currentUser={currentUser}
+            onNavigateModule={m => setActiveModule(m)}
+          />
+
           {/* Role Decision Support & Real-Time Analytic Tool */}
           <RoleAnalyticsPanel
             currentUser={currentUser}
             onNavigateModule={m => setActiveModule(m)}
           />
 
-          {/* Module Content or RBAC Scope Boundary */}
-          {!isRoleAuthorizedForModule(currentUser.role, activeModule) ? (
-            <RbacAccessBoundary
-              currentUser={currentUser}
-              targetModuleId={activeModule}
-              targetModuleName={navItems.find(i => i.id === activeModule)?.label || activeModule}
-              onTriggerBreakGlass={() => setShowBreakGlassModal(true)}
-              onSwitchToAuthorizedRole={role => {
-                const targetUser = db.users.find(u => u.role === role);
-                if (targetUser) {
-                  setCurrentUser(targetUser);
-                }
-              }}
-            />
-          ) : (
-            <>
-              {activeModule === 'messages' && <StaffMessagingWorkstation currentUser={currentUser} />}
-              {activeModule === 'executive_bi' && <ExecutiveIntelligenceDashboard />}
-              {activeModule === 'command_center' && <ExecutiveCommandCenter />}
-              {activeModule === 'opd' && <ClinicalWorkstation currentUser={currentUser} />}
-              {activeModule === 'triage' && <TriageNursingWorkstation currentUser={currentUser} />}
-              {activeModule === 'inpatient' && <InpatientADTWorkstation currentUser={currentUser} />}
-              {activeModule === 'lab' && <LaboratoryWorkstation currentUser={currentUser} />}
-              {activeModule === 'blood_bank' && <BloodBankWorkstation currentUser={currentUser} />}
-              {activeModule === 'radiology' && <RadiologyWorkstation currentUser={currentUser} />}
-              {activeModule === 'resources' && <ResourceManagementWorkstation currentUser={currentUser} />}
-              {activeModule === 'pharmacy' && <PharmacyWorkstation currentUser={currentUser} />}
-              {activeModule === 'insurance' && <InsuranceVerificationWorkstation currentUser={currentUser} />}
-              {activeModule === 'billing' && <BillingCashierWorkstation currentUser={currentUser} />}
-              {activeModule === 'gl' && <GeneralLedgerWorkstation currentUser={currentUser} />}
-              {activeModule === 'procurement' && <ProcurementInventoryWorkstation currentUser={currentUser} />}
-              {activeModule === 'hr' && <HRPayrollWorkstation currentUser={currentUser} />}
-              {activeModule === 'scheduling' && <StaffSchedulingWorkstation currentUser={currentUser} />}
-              {activeModule === 'assets' && <AssetsFacilitiesWorkstation currentUser={currentUser} />}
-              {activeModule === 'audit_trail' && <AuditTrailWorkstation currentUser={currentUser} />}
-              {activeModule === 'quality' && <QualityAuditWorkstation currentUser={currentUser} />}
-            </>
-          )}
+          {/* Workstation Modules Protected by withRoleAccess HOC */}
+          {activeModule === 'messages' && <SecureMessagingWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'executive_bi' && <ExecutiveIntelligenceDashboard />}
+          {activeModule === 'command_center' && <ExecutiveCommandCenter />}
+          {activeModule === 'opd' && <SecureClinicalWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'triage' && <SecureTriageWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'inpatient' && <SecureInpatientWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'lab' && <SecureLabWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'blood_bank' && <SecureBloodBankWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'radiology' && <SecureRadiologyWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'resources' && <SecureResourceWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'pharmacy' && <SecurePharmacyWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'insurance' && <SecureInsuranceWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'billing' && <SecureBillingWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'gl' && <SecureGLWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'procurement' && <SecureProcurementWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'hr' && <SecureHRPayrollWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'scheduling' && <SecureSchedulingWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'assets' && <SecureAssetsWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'audit_trail' && <SecureAuditTrailWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
+          {activeModule === 'quality' && <SecureQualityWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
         </main>
       </div>
 
