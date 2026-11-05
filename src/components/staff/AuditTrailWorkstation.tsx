@@ -48,9 +48,18 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
 
   // Search & Filters for Audit Ledger
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'LOGINS' | 'MODIFICATIONS' | 'EXPORTS' | 'SECURITY'>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'LOGINS' | 'MODIFICATIONS' | 'EXPORTS' | 'USER_ACTIONS' | 'SECURITY'>('ALL');
   const [actionFilter, setActionFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SUCCESS' | 'FLAGGED' | 'DENIED'>('ALL');
+  const [, setAuditLogRevision] = useState(0);
+
+  // Subscribe to real-time audit trail logs
+  useEffect(() => {
+    const unsubscribe = auditTrailService.subscribe(() => {
+      setAuditLogRevision(r => r + 1);
+    });
+    return () => unsubscribe();
+  }, []);
   
   // Inspection & Simulation Modals
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
@@ -272,17 +281,28 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-extrabold text-slate-900 text-base">Administrator Audit Trail & Compliance Ledger</h2>
+            <h2 className="font-extrabold text-slate-900 text-base">Administrator & Management Audit Vault</h2>
             <span className="text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-700 px-2 py-0.5 rounded">
-              ADMINISTRATOR CLEARANCE LEVEL 3
+              ADMINISTRATOR & MANAGEMENT CLEARANCE LEVEL 3
             </span>
             <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-800 border border-teal-200 px-2 py-0.5 rounded">
-              STATUTORY COMPLIANCE
+              STATUTORY COMPLIANCE (LMDC / HIPAA / MOH)
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Centralized, immutable audit logging tracking all user actions in the StaffWorkspace (logins, navigation, patient chart edits, exports) with SHA-256 HMAC cryptographic chain verification.
+          <p className="text-xs text-slate-500 mt-1">
+            Centralized immutable audit logging tracking all user actions across the StaffWorkspace (logins, navigation, patient chart edits, exports, theme customizations) with SHA-256 HMAC cryptographic chain verification.
           </p>
+          <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-600">
+            <span className="font-semibold text-slate-700">Active Reviewer:</span>
+            <span className="font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
+              {currentUser.fullName} ({currentUser.role === 'it_security_admin' ? 'IT Security Administrator' : currentUser.role === 'medical_director' ? 'Medical Director (Management)' : currentUser.role === 'executive_ceo' ? 'Executive CEO (Management)' : currentUser.role === 'quality_auditor' ? 'Quality Auditor (Management)' : 'Governance Oversight'})
+            </span>
+            <span className="text-slate-400">•</span>
+            <span className="text-emerald-700 font-medium flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+              Role Authorized
+            </span>
+          </div>
         </div>
 
         {/* Tab Selector */}
@@ -492,6 +512,16 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
                 }`}
               >
                 Patient Data Exports ({metrics.dataExports})
+              </button>
+              <button
+                onClick={() => setCategoryFilter('USER_ACTIONS')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                  categoryFilter === 'USER_ACTIONS'
+                    ? 'bg-indigo-700 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Staff Actions & Navigation
               </button>
               <button
                 onClick={() => setCategoryFilter('SECURITY')}

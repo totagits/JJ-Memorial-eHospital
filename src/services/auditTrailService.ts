@@ -8,7 +8,7 @@ import { AuditEvent, UserAccount, UserRole } from '../types/auth';
 import { getDatabaseState, updateDatabaseState } from './storageService';
 
 export interface AuditLogFilterOptions {
-  category?: 'ALL' | 'LOGINS' | 'MODIFICATIONS' | 'EXPORTS' | 'SECURITY';
+  category?: 'ALL' | 'LOGINS' | 'MODIFICATIONS' | 'EXPORTS' | 'USER_ACTIONS' | 'SECURITY';
   action?: string;
   module?: string;
   userId?: string;
@@ -48,6 +48,28 @@ function computeRecordHash(entry: Partial<AuditEvent>, previousHash: string = 'G
 }
 
 class AuditTrailService {
+  private listeners: ((event: AuditEvent) => void)[] = [];
+
+  /**
+   * Subscribe to real-time audit trail log events
+   */
+  public subscribe(listener: (event: AuditEvent) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
+  private notifyListeners(event: AuditEvent) {
+    this.listeners.forEach(fn => {
+      try {
+        fn(event);
+      } catch (err) {
+        console.error('Audit trail subscriber error:', err);
+      }
+    });
+  }
+
   /**
    * Core logging primitive: writes to the central secure database table with tamper-evident chaining.
    */
@@ -81,6 +103,10 @@ class AuditTrailService {
         draft.auditLogs = draft.auditLogs.slice(0, 2500);
       }
     });
+
+    if (createdEvent) {
+      this.notifyListeners(createdEvent);
+    }
 
     return createdEvent!;
   }
@@ -237,6 +263,81 @@ class AuditTrailService {
   }
 
   /**
+   * Log workstation navigation event
+   */
+  public logNavigation(user: UserAccount, moduleId: string, moduleLabel?: string): AuditEvent {
+    return this.logUserAction({
+      user,
+      action: 'NAVIGATE_MODULE',
+      module: 'SECURITY',
+      details: `User navigated to workstation: ${moduleLabel || moduleId.toUpperCase()} (Module ID: ${moduleId})`,
+    });
+  }
+
+  /**
+   * Log global EMR chart search queries
+   */
+  public logSearch(user: UserAccount, query: string, resultCount?: number): AuditEvent {
+    const countNote = resultCount !== undefined ? ` (${resultCount} matches returned)` : '';
+    return this.logUserAction({
+      user,
+      action: 'READ',
+      module: 'PATIENT_INDEX',
+      details: `Global patient chart search query executed: "${query}"${countNote}. Protected health information indexed.`,
+    });
+  }
+
+  /**
+   * Log role theme change event
+   */
+  public logThemeSwitch(user: UserAccount, themeName: string, themeId: string, badge: string): AuditEvent {
+    return this.logUserAction({
+      user,
+      action: 'CONFIG_CHANGE',
+      module: 'SECURITY',
+      details: `Dynamic workstation theme switched to "${themeName}" (${badge}, ID: ${themeId}) matching role profile.`,
+    });
+  }
+
+  /**
+   * Log workstation terminal lock/unlock
+   */
+  public logTerminalLock(user: UserAccount, action: 'LOCK' | 'UNLOCK'): AuditEvent {
+    return this.logUserAction({
+      user,
+      action: action === 'LOCK' ? 'CONFIG_CHANGE' : 'LOGIN',
+      module: 'SECURITY',
+      details: action === 'LOCK'
+        ? 'Workstation terminal locked by user. Screen shielded for patient confidentiality.'
+        : 'Workstation terminal unlocked via biometric smartcard verification.',
+    });
+  }
+
+  /**
+   * Log offline resiliency simulation toggle
+   */
+  public logOfflineToggle(user: UserAccount, simulateOffline: boolean): AuditEvent {
+    return this.logUserAction({
+      user,
+      action: 'CONFIG_CHANGE',
+      module: 'SECURITY',
+      details: `VOA East intermittent network simulation ${simulateOffline ? 'ENGAGED (Testing offline IndexedDB queue)' : 'DISENGAGED (Restoring live cloud pipeline)'}.`,
+    });
+  }
+
+  /**
+   * Log manual cache sync
+   */
+  public logCacheSync(user: UserAccount, patientCount: number, encounterCount: number): AuditEvent {
+    return this.logUserAction({
+      user,
+      action: 'UPDATE',
+      module: 'SECURITY',
+      details: `Local IndexedDB cache synchronized: ${patientCount} patient charts and ${encounterCount} clinical encounters cached for zero-downtime offline continuity.`,
+    });
+  }
+
+  /**
    * Cryptographic Ledger Integrity Check
    * Verifies that the audit ledger has not been tampered with or retroactively altered.
    */
@@ -298,6 +399,7 @@ class AuditTrailService {
       if (options.category === 'LOGINS' && !isLogin(log.action)) return false;
       if (options.category === 'MODIFICATIONS' && !isMod(log.action)) return false;
       if (options.category === 'EXPORTS' && !isExport(log.action)) return false;
+      if (options.category === 'USER_ACTIONS' && !['NAVIGATE_MODULE', 'OPEN_SEARCH', 'READ', 'CONFIG_CHANGE', 'UPDATE'].includes(log.action as string)) return false;
       if (options.category === 'SECURITY' && !isSec(log.status, log.action)) return false;
 
       // 2. Action

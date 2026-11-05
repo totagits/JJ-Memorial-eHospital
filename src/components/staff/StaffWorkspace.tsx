@@ -157,24 +157,14 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
   // Centralized Audit Action Handler: tracks navigation across workstations for statutory compliance
   const handleNavigate = (moduleId: string, moduleLabel?: string) => {
     setActiveModule(moduleId);
-    auditTrailService.logUserAction({
-      user: currentUser,
-      action: 'NAVIGATE_MODULE',
-      module: moduleId as any,
-      details: `User navigated to workstation: ${moduleLabel || moduleId}`,
-    });
+    auditTrailService.logNavigation(currentUser, moduleId, moduleLabel);
   };
 
   // Custom Theme Selection Handler
   const handleSelectTheme = (theme: RoleThemeConfig) => {
     setCurrentTheme(theme);
     setShowThemeModal(false);
-    auditTrailService.logUserAction({
-      user: currentUser,
-      action: 'CONFIG_CHANGE',
-      module: 'SECURITY',
-      details: `Custom display theme selected: ${theme.name} (${theme.badge})`,
-    });
+    auditTrailService.logThemeSwitch(currentUser, theme.name, theme.id, theme.badge);
   };
 
   // Offline & IndexedDB Caching Telemetry
@@ -206,12 +196,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
   const handleManualCacheSync = async () => {
     setIsSyncingCache(true);
     await indexedDbCache.cacheStateToIndexedDB(db);
-    auditTrailService.logUserAction({
-      user: currentUser,
-      action: 'UPDATE',
-      module: 'SECURITY',
-      details: `Manual cache sync executed. Synchronized ${db.patients.length} patient charts, ${db.inventory.length} formulary items, and ${db.encounters.length} clinical encounters in local IndexedDB.`,
-    });
+    auditTrailService.logCacheSync(currentUser, db.patients.length, db.encounters.length);
     setTimeout(() => {
       setIsSyncingCache(false);
       setLastSyncTime(new Date().toLocaleTimeString());
@@ -220,12 +205,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
   const handleToggleOfflineSimulation = (active: boolean) => {
     setSimulateOffline(active);
-    auditTrailService.logUserAction({
-      user: currentUser,
-      action: 'CONFIG_CHANGE',
-      module: 'SECURITY',
-      details: `Intermittent VOA East network simulation ${active ? 'ENGAGED' : 'DISENGAGED'}.`,
-    });
+    auditTrailService.logOfflineToggle(currentUser, active);
   };
 
   const effectiveOnline = isOnline && !simulateOffline;
@@ -242,14 +222,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
   const handleToggleTerminalLock = (locked: boolean) => {
     setIsTerminalLocked(locked);
-    auditTrailService.logUserAction({
-      user: currentUser,
-      action: locked ? 'TERMINAL_LOCK' : 'TERMINAL_UNLOCK',
-      module: 'SECURITY',
-      details: locked 
-        ? 'Clinical workstation screen lock engaged by user.' 
-        : 'Biometric smartcard verified. Workstation unlocked.',
-    });
+    auditTrailService.logTerminalLock(currentUser, locked ? 'LOCK' : 'UNLOCK');
   };
 
   // Global Keyboard shortcuts: Ctrl+K for search, Ctrl+L for terminal lock
@@ -467,7 +440,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
               <span className="hidden sm:inline">Hostinger & Git Runbook</span>
             </button>
 
-            {/* Administrator Exclusive: Audit Trail & Compliance Ledger Vault */}
+            {/* Administrator & Management Audit Trail & Compliance Ledger Vault */}
             {hasAuditTrailAccess && (
               <button
                 onClick={() => handleNavigate('audit_trail', 'Audit Trail & Compliance')}
@@ -476,12 +449,12 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
                     ? 'bg-indigo-700 text-white shadow-xs'
                     : 'bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-800'
                 }`}
-                title="Administrator Audit Trail & Compliance Ledger (Clearance Level 3)"
+                title="Administrator & Management Audit Trail & Compliance Ledger (Clearance Level 3)"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
                 <span className="hidden xl:inline">Audit Trail</span>
                 <span className="text-[10px] bg-indigo-900 text-indigo-200 border border-indigo-700 px-1 py-0.2 rounded font-mono font-bold">
-                  ADMIN
+                  ADMIN / MGMT
                 </span>
               </button>
             )}
@@ -611,13 +584,14 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
         </div>
       )}
 
-      {isAdmin && !currentTheme.isHighContrast && !currentTheme.isFinancialLayout && (
+      {/* Administrator & Management Governance & Audit Ribbon */}
+      {RBACService.isAdministratorOrManagement(currentUser) && !currentTheme.isHighContrast && !currentTheme.isFinancialLayout && (
         <div className="bg-slate-900 text-indigo-200 border-b border-indigo-900/80 px-4 py-2 text-xs shadow-inner">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
               <span className="font-bold text-white uppercase tracking-wider text-[11px]">
-                🛡️ Statutory Compliance & Audit Governance:
+                🛡️ Statutory Compliance & Regulatory Surveillance:
               </span>
               <span className="text-indigo-300 font-mono text-[11px]">
                 Chained Ledger: <strong className="text-white font-bold">{db.auditLogs?.length || 0} events</strong> | SHA-256 HMAC Verified
@@ -625,13 +599,38 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
             </div>
             <div className="flex items-center gap-2">
               <span className="bg-indigo-950 text-indigo-300 border border-indigo-700 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
-                CLEARANCE LEVEL 3
+                ADMIN & MANAGEMENT LEVEL 3
               </span>
               <button
                 onClick={() => handleNavigate('audit_trail', 'Audit Trail & Compliance')}
                 className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors shadow-xs"
               >
-                Open Audit Ledger
+                Open Audit Vault
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Role Ribbon for Clinical, Nursing, and Pharmacy modes */}
+      {!currentTheme.isHighContrast && !currentTheme.isFinancialLayout && !RBACService.isAdministratorOrManagement(currentUser) && (
+        <div className="bg-slate-900/90 text-slate-300 border-b border-slate-800 px-4 py-1.5 text-xs shadow-inner">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${currentTheme.accentBadge}`}>
+                {currentTheme.badge}
+              </span>
+              <span className="text-[11px] text-slate-200 font-medium">
+                {currentTheme.ribbonText}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[10px]">
+              <span className="text-slate-400 font-mono">Density: <strong>{currentTheme.tableDensity}</strong></span>
+              <button
+                onClick={() => setShowThemeModal(true)}
+                className="text-teal-400 hover:underline cursor-pointer font-semibold"
+              >
+                Customize Theme
               </button>
             </div>
           </div>
@@ -725,7 +724,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
                     <span>Audit & Compliance</span>
                   </span>
                   <span className="bg-indigo-100 text-indigo-800 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold">
-                    ADMIN ONLY
+                    ADMIN & MGMT
                   </span>
                 </div>
                 <nav className="space-y-1">

@@ -59,6 +59,7 @@ export const DEMO_CREDENTIALS: Record<string, { password: string; pin: string; t
   'cashier.massa': { password: 'Hospital2026!', pin: '7788', title: 'Cashier & Patient Accounts' },
   'cpa.tarpeh': { password: 'Hospital2026!', pin: '8899', title: 'Chief Accountant (GL)' },
   'admin.johnson': { password: 'Hospital2026!', pin: '4466', title: 'IT & Security Administrator' },
+  'audit.davies': { password: 'Hospital2026!', pin: '3355', title: 'Quality Auditor (Management)' },
   'nurse.weah': { password: 'Hospital2026!', pin: '4402', title: 'Head Nurse / Inpatient ADT' },
   'pharm.tubman': { password: 'Hospital2026!', pin: '1142', title: 'Lead Clinical Pharmacist' },
   'rad.kromah': { password: 'Hospital2026!', pin: '0914', title: 'Radiologist / Imaging Lead' },

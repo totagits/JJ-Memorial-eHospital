@@ -12,7 +12,8 @@ export type PrimaryRole =
   | 'Clinician'    // Attending Physician, Outpatient OPD, Doctors, Specialists
   | 'Nurse'        // Triage, Inpatient Wards, Nursing Care
   | 'Pharmacy'     // Lead Clinical Pharmacist, Formulary, Dispense
-  | 'Admin'        // Executive CEO, Medical Director, IT Security Admin
+  | 'Admin'        // IT Security Admin, System Admin
+  | 'Management'   // Executive CEO, Medical Director, Quality Auditor, Hospital Leadership
   | 'Radiology';   // Medical Imaging, PACS Technologist
 
 export type AccessLevel = 'NONE' | 'READ' | 'WRITE' | 'ADMIN';
@@ -51,13 +52,20 @@ export const PRIMARY_ROLE_MAP: Record<UserRole | string, PrimaryRole> = {
   radiologist_technologist: 'Radiology',
   Radiology: 'Radiology',
 
-  // 7. Administration & Executive Governance
-  executive_ceo: 'Admin',
+  // 7. Executive Management & Clinical Governance
+  executive_ceo: 'Management',
+  medical_director: 'Management',
+  quality_auditor: 'Management',
+  Management: 'Management',
+  management: 'Management',
+  hospital_management: 'Management',
+
+  // 8. Administration & IT Security
   it_security_admin: 'Admin',
-  medical_director: 'Admin',
-  quality_auditor: 'Admin',
   biomedical_facilities: 'Admin',
   Admin: 'Admin',
+  admin: 'Admin',
+  Administrator: 'Admin',
 
   // Fallback
   patient: 'Nurse',
@@ -66,7 +74,7 @@ export const PRIMARY_ROLE_MAP: Record<UserRole | string, PrimaryRole> = {
 /**
  * Module Access Matrix per Primary Role
  * Strictly defines access levels for all 20 clinical, financial, and operations modules.
- * Ensures complete Segregation of Duties (SoD).
+ * Ensures complete Segregation of Duties (SoD) and Administrator/Management compliance access.
  */
 export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLevel>> = {
   // 1. Diagnostic Laboratory (LIS)
@@ -75,6 +83,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Clinician: 'WRITE',
     Nurse: 'READ',
     Admin: 'ADMIN',
+    Management: 'READ',
     Pharmacy: 'READ',
     Radiology: 'READ',
     Billing: 'NONE', // Billing staff have NO access to Laboratory LIS
@@ -86,6 +95,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Clinician: 'WRITE',
     Nurse: 'WRITE',
     Admin: 'ADMIN',
+    Management: 'READ',
     Pharmacy: 'READ',
     Radiology: 'NONE',
     Billing: 'NONE',
@@ -95,6 +105,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
   billing: {
     Billing: 'ADMIN',
     Admin: 'ADMIN',
+    Management: 'READ',
     LIS: 'NONE',       // Laboratory Scientist has ZERO access to Billing
     Clinician: 'NONE', // Clinicians have ZERO access to Billing invoices
     Nurse: 'NONE',     // Nurses have ZERO access to Billing invoices
@@ -106,6 +117,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
   gl: {
     Billing: 'ADMIN',
     Admin: 'ADMIN',
+    Management: 'READ',
     LIS: 'NONE',       // Laboratory Scientist has ZERO access to General Ledger
     Clinician: 'NONE',
     Nurse: 'NONE',
@@ -117,6 +129,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
   insurance: {
     Billing: 'ADMIN',
     Admin: 'ADMIN',
+    Management: 'READ',
     Clinician: 'READ',
     Nurse: 'READ',
     Pharmacy: 'READ',
@@ -128,6 +141,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
   hr: {
     Billing: 'ADMIN',
     Admin: 'ADMIN',
+    Management: 'ADMIN',
     LIS: 'NONE',
     Clinician: 'NONE',
     Nurse: 'NONE',
@@ -140,6 +154,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Clinician: 'ADMIN',
     Nurse: 'WRITE',
     Admin: 'ADMIN',
+    Management: 'READ',
     Billing: 'READ',
     Pharmacy: 'READ',
     LIS: 'NONE',       // Laboratory Scientist has ZERO access to OPD clinical encounters
@@ -151,6 +166,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Nurse: 'ADMIN',
     Clinician: 'ADMIN',
     Admin: 'ADMIN',
+    Management: 'READ',
     Billing: 'READ',
     Pharmacy: 'READ',
     LIS: 'NONE',
@@ -162,6 +178,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Nurse: 'ADMIN',
     Clinician: 'WRITE',
     Admin: 'ADMIN',
+    Management: 'READ',
     Billing: 'READ',
     Pharmacy: 'READ',
     LIS: 'NONE',
@@ -174,6 +191,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Clinician: 'WRITE',
     Nurse: 'READ',
     Admin: 'ADMIN',
+    Management: 'READ',
     LIS: 'READ',
     Billing: 'NONE',
     Pharmacy: 'NONE',
@@ -185,6 +203,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Clinician: 'WRITE',
     Nurse: 'READ',
     Admin: 'ADMIN',
+    Management: 'READ',
     Billing: 'READ',
     LIS: 'NONE',
     Radiology: 'NONE',
@@ -195,6 +214,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Pharmacy: 'ADMIN',
     Billing: 'WRITE',
     Admin: 'ADMIN',
+    Management: 'READ',
     LIS: 'READ',
     Radiology: 'READ',
     Clinician: 'READ',
@@ -204,6 +224,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
   // 13. Biomedical Resources & Equipment
   resources: {
     Admin: 'ADMIN',
+    Management: 'READ',
     Clinician: 'WRITE',
     Nurse: 'WRITE',
     Radiology: 'WRITE',
@@ -217,6 +238,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Nurse: 'ADMIN',
     Clinician: 'WRITE',
     Admin: 'ADMIN',
+    Management: 'ADMIN',
     Billing: 'READ',
     Pharmacy: 'READ',
     LIS: 'READ',
@@ -226,6 +248,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
   // 15. Biomedical Engineering & Facilities
   assets: {
     Admin: 'ADMIN',
+    Management: 'READ',
     Pharmacy: 'WRITE',
     Clinician: 'READ',
     Nurse: 'READ',
@@ -237,6 +260,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
   // 16. Quality & Safety Incident Management
   quality: {
     Admin: 'ADMIN',
+    Management: 'ADMIN',
     LIS: 'WRITE',
     Clinician: 'WRITE',
     Nurse: 'WRITE',
@@ -245,20 +269,22 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Radiology: 'WRITE',
   },
 
-  // 17. Immutable Audit Trail & Regulatory Surveillance (Administrator Exclusive)
+  // 17. Immutable Audit Trail & Regulatory Surveillance (Administrator & Management)
   audit_trail: {
     Admin: 'ADMIN',
-    Billing: 'NONE',   // Explicitly blocked: Administrators only
-    Clinician: 'NONE', // Explicitly blocked: Administrators only
-    LIS: 'NONE',       // Explicitly blocked: Administrators only
-    Nurse: 'NONE',     // Explicitly blocked: Administrators only
-    Pharmacy: 'NONE',  // Explicitly blocked: Administrators only
-    Radiology: 'NONE', // Explicitly blocked: Administrators only
+    Management: 'ADMIN', // Executive Management has full audit & compliance review clearance
+    Billing: 'NONE',   // Explicitly blocked: Administrators & Management only
+    Clinician: 'NONE', // Explicitly blocked: Administrators & Management only
+    LIS: 'NONE',       // Explicitly blocked: Administrators & Management only
+    Nurse: 'NONE',     // Explicitly blocked: Administrators & Management only
+    Pharmacy: 'NONE',  // Explicitly blocked: Administrators & Management only
+    Radiology: 'NONE', // Explicitly blocked: Administrators & Management only
   },
 
   // 18. Executive Intelligence (BI)
   executive_bi: {
     Admin: 'ADMIN',
+    Management: 'ADMIN',
     Billing: 'WRITE',
     Clinician: 'READ',
     LIS: 'NONE',
@@ -270,6 +296,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
   // 19. Facility Command Center & Telemetry
   command_center: {
     Admin: 'ADMIN',
+    Management: 'ADMIN',
     Clinician: 'READ',
     Nurse: 'READ',
     Billing: 'READ',
@@ -286,6 +313,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Nurse: 'ADMIN',
     Pharmacy: 'ADMIN',
     Admin: 'ADMIN',
+    Management: 'ADMIN',
     Radiology: 'ADMIN',
   },
 };
@@ -372,9 +400,18 @@ export const RBACService = {
       case 'Nurse': return 'triage';
       case 'Pharmacy': return 'pharmacy';
       case 'Radiology': return 'radiology';
-      case 'Admin': return 'executive_bi';
+      case 'Admin': return 'audit_trail';
+      case 'Management': return 'audit_trail';
       default: return 'opd';
     }
+  },
+
+  /**
+   * Returns true if user has Administrator or Management clearance to review compliance audit logs
+   */
+  isAdministratorOrManagement(userOrRole?: UserAccount | UserRole | string): boolean {
+    const primaryRole = this.getPrimaryRole(userOrRole);
+    return primaryRole === 'Admin' || primaryRole === 'Management';
   },
 
   /**
@@ -382,7 +419,7 @@ export const RBACService = {
    */
   getAuthorizedRolesForModule(moduleId: string, minLevel: AccessLevel = 'READ'): PrimaryRole[] {
     const moduleRules = MODULE_ACCESS_MATRIX[moduleId];
-    if (!moduleRules) return ['Admin', 'Clinician'];
+    if (!moduleRules) return ['Admin', 'Management', 'Clinician'];
     const minPriority = ACCESS_LEVEL_PRIORITY[minLevel];
     return (Object.keys(moduleRules) as PrimaryRole[]).filter(
       role => ACCESS_LEVEL_PRIORITY[moduleRules[role]] >= minPriority
@@ -420,6 +457,7 @@ export type RoleThemeId =
   | 'clinical-daylight' 
   | 'nursing-calm' 
   | 'admin-executive' 
+  | 'management-oversight'
   | 'radiology-dark'
   | 'pharmacy-amber';
 
@@ -431,6 +469,9 @@ export interface RoleThemeConfig {
   badge: string;
   isHighContrast: boolean;
   isFinancialLayout: boolean;
+  isDataDense: boolean;
+  tableDensity: 'compact' | 'ultra-dense' | 'comfortable' | 'high-contrast';
+  fontSize: 'compact' | 'standard' | 'large';
   workspaceBg: string;
   headerBg: string;
   headerBorder: string;
@@ -446,7 +487,8 @@ export interface RoleThemeConfig {
   accentColor: string;
   accentBadge: string;
   accentButton: string;
-  ribbonType?: 'LAB_CONTRAST' | 'FINANCIAL_RECON' | 'ADMIN_AUDIT' | 'CLINICAL_QUEUE';
+  ribbonText: string;
+  ribbonType?: 'LAB_CONTRAST' | 'FINANCIAL_RECON' | 'ADMIN_AUDIT' | 'MANAGEMENT_OVERSIGHT' | 'CLINICAL_QUEUE';
 }
 
 export const ROLE_THEMES: Record<PrimaryRole, RoleThemeConfig> = {
@@ -459,114 +501,102 @@ export const ROLE_THEMES: Record<PrimaryRole, RoleThemeConfig> = {
     badge: 'LIS HIGH-CONTRAST',
     isHighContrast: true,
     isFinancialLayout: false,
-    workspaceBg: 'bg-slate-950 text-slate-100',
-    headerBg: 'bg-black text-amber-300 border-b border-amber-500/40',
-    headerBorder: 'border-amber-500/40',
-    headerBadge: 'bg-amber-950 text-amber-300 border border-amber-600 font-mono font-bold',
-    sidebarBg: 'bg-slate-900 border-r border-slate-800',
-    sidebarBorder: 'border-slate-800',
-    sidebarCardBg: 'bg-slate-950 border border-slate-800 text-slate-200',
-    mainBg: 'bg-slate-950',
-    cardBg: 'bg-slate-900 border border-slate-700 text-slate-100 shadow-md',
-    cardBorder: 'border-slate-700',
+    isDataDense: false,
+    tableDensity: 'high-contrast',
+    fontSize: 'standard',
+    workspaceBg: 'bg-black text-amber-100',
+    headerBg: 'bg-black text-amber-300 border-b-2 border-amber-500',
+    headerBorder: 'border-amber-500',
+    headerBadge: 'bg-amber-950 text-amber-300 border-2 border-amber-400 font-mono font-black',
+    sidebarBg: 'bg-slate-950 border-r-2 border-amber-900/60',
+    sidebarBorder: 'border-amber-900/60',
+    sidebarCardBg: 'bg-black border border-amber-500/50 text-amber-200',
+    mainBg: 'bg-black',
+    cardBg: 'bg-slate-950 border-2 border-amber-500/60 text-amber-100 shadow-lg',
+    cardBorder: 'border-amber-500/60',
     textPrimary: 'text-white',
-    textSecondary: 'text-slate-300',
-    accentColor: 'text-cyan-400',
-    accentBadge: 'bg-cyan-950 text-cyan-300 border border-cyan-600',
-    accentButton: 'bg-amber-500 hover:bg-amber-400 text-black font-bold shadow-sm',
+    textSecondary: 'text-amber-200',
+    accentColor: 'text-cyan-300',
+    accentBadge: 'bg-cyan-950 text-cyan-200 border border-cyan-400 font-mono font-bold',
+    accentButton: 'bg-amber-400 hover:bg-amber-300 text-black font-black shadow-md',
+    ribbonText: '🔬 LIS HIGH-CONTRAST BENCH MODE — Fluorescent dark-room calibration for Gram stains, panic lab values, and specimen processing.',
     ribbonType: 'LAB_CONTRAST',
   },
 
-  // 2. Billing & Accounts — Financial Ledger & Cashier Layout
+  // 2. Billing & Accounts — Condensed Financial Ledger & Cashier Layout
   Billing: {
     id: 'billing-financial',
     primaryRole: 'Billing',
-    name: 'Financial Ledger & Cashier Layout',
-    tagline: 'Dual-currency (USD & 195 LRD) reconciliation, drawer tracking & rapid invoice ledger',
-    badge: 'FINANCIAL LEDGER',
+    name: 'Financial Ledger & Cashier (Condensed View)',
+    tagline: 'Ultra-dense dual-currency ledger with tight tables and rapid invoice reconciliation',
+    badge: 'FINANCIAL LEDGER (CONDENSED)',
     isHighContrast: false,
     isFinancialLayout: true,
-    workspaceBg: 'bg-emerald-950/15 text-slate-900',
+    isDataDense: true,
+    tableDensity: 'ultra-dense',
+    fontSize: 'compact',
+    workspaceBg: 'bg-emerald-950/10 text-slate-900',
     headerBg: 'bg-emerald-950 text-emerald-100 border-b border-emerald-800',
     headerBorder: 'border-emerald-800',
-    headerBadge: 'bg-emerald-900 text-emerald-300 border border-emerald-700 font-mono font-bold',
+    headerBadge: 'bg-emerald-900 text-emerald-200 border border-emerald-600 font-mono font-bold',
     sidebarBg: 'bg-white border-r border-emerald-200',
     sidebarBorder: 'border-emerald-200',
-    sidebarCardBg: 'bg-emerald-50/70 border border-emerald-200 text-slate-800',
+    sidebarCardBg: 'bg-emerald-50/80 border border-emerald-300 text-slate-900',
     mainBg: 'bg-slate-50',
-    cardBg: 'bg-white border border-emerald-200 text-slate-900 shadow-xs',
-    cardBorder: 'border-emerald-200',
+    cardBg: 'bg-white border border-emerald-300 text-slate-900 shadow-xs',
+    cardBorder: 'border-emerald-300',
     textPrimary: 'text-slate-900',
     textSecondary: 'text-emerald-900',
     accentColor: 'text-emerald-700',
-    accentBadge: 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-mono',
+    accentBadge: 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-mono font-bold',
     accentButton: 'bg-emerald-700 hover:bg-emerald-800 text-white font-bold shadow-xs',
+    ribbonText: '💵 CONDENSED FINANCIAL LEDGER VIEW — High-density layout active. Dual currency pegged at $1 USD : 195 LRD. Rapid cashier reconciliation.',
     ribbonType: 'FINANCIAL_RECON',
   },
 
-  // 3. Clinician — Clinical Daylight Mode
-  Clinician: {
-    id: 'clinical-daylight',
-    primaryRole: 'Clinician',
-    name: 'Clinical Daylight (Evidence-Based EMR)',
-    tagline: 'Teal & hospital slate typography calibrated for acute consults, triage & ICD-11 coding',
-    badge: 'CLINICAL EMR',
+  // 3. Hospital Management & Clinical Governance — Executive Oversight
+  Management: {
+    id: 'management-oversight',
+    primaryRole: 'Management',
+    name: 'Hospital Management & Governance (Audit View)',
+    tagline: 'Executive oversight, regulatory audit ledger access, clinical KPIs & resource telemetry',
+    badge: 'MANAGEMENT OVERSIGHT',
     isHighContrast: false,
     isFinancialLayout: false,
+    isDataDense: false,
+    tableDensity: 'comfortable',
+    fontSize: 'standard',
     workspaceBg: 'bg-slate-100 text-slate-900',
-    headerBg: 'bg-slate-900 text-white border-b border-slate-800',
-    headerBorder: 'border-slate-800',
-    headerBadge: 'bg-teal-950 text-teal-300 border border-teal-800 font-mono font-bold',
-    sidebarBg: 'bg-white border-r border-slate-200',
-    sidebarBorder: 'border-slate-200',
-    sidebarCardBg: 'bg-white border border-slate-200 text-slate-800',
+    headerBg: 'bg-indigo-950 text-indigo-100 border-b border-indigo-800',
+    headerBorder: 'border-indigo-800',
+    headerBadge: 'bg-indigo-900 text-indigo-200 border border-indigo-700 font-mono font-bold',
+    sidebarBg: 'bg-white border-r border-indigo-100',
+    sidebarBorder: 'border-indigo-100',
+    sidebarCardBg: 'bg-indigo-50/70 border border-indigo-200 text-slate-800',
     mainBg: 'bg-slate-100',
-    cardBg: 'bg-white border border-slate-200 text-slate-900 shadow-xs',
-    cardBorder: 'border-slate-200',
+    cardBg: 'bg-white border border-indigo-200 text-slate-900 shadow-xs',
+    cardBorder: 'border-indigo-200',
     textPrimary: 'text-slate-900',
-    textSecondary: 'text-slate-600',
-    accentColor: 'text-teal-700',
-    accentBadge: 'bg-teal-50 text-teal-700 border border-teal-200',
-    accentButton: 'bg-teal-700 hover:bg-teal-800 text-white font-semibold shadow-xs',
-    ribbonType: 'CLINICAL_QUEUE',
+    textSecondary: 'text-indigo-950',
+    accentColor: 'text-indigo-700',
+    accentBadge: 'bg-indigo-100 text-indigo-800 border border-indigo-300 font-mono font-bold',
+    accentButton: 'bg-indigo-700 hover:bg-indigo-800 text-white font-bold shadow-xs',
+    ribbonText: '🏛️ MANAGEMENT & GOVERNANCE VIEW — Executive oversight mode. Clearance granted for Central Audit Trail & Compliance Vault.',
+    ribbonType: 'MANAGEMENT_OVERSIGHT',
   },
 
-  // 4. Nursing Care — Triage Calm
-  Nurse: {
-    id: 'nursing-calm',
-    primaryRole: 'Nurse',
-    name: 'Triage Calm & Inpatient ADT',
-    tagline: 'Cyan telemetry & acute bed status monitoring with high triage color recognition',
-    badge: 'WARD NURSING',
-    isHighContrast: false,
-    isFinancialLayout: false,
-    workspaceBg: 'bg-sky-50/30 text-slate-900',
-    headerBg: 'bg-sky-950 text-sky-100 border-b border-sky-800',
-    headerBorder: 'border-sky-800',
-    headerBadge: 'bg-sky-900 text-sky-300 border border-sky-700 font-mono font-bold',
-    sidebarBg: 'bg-white border-r border-sky-200',
-    sidebarBorder: 'border-sky-200',
-    sidebarCardBg: 'bg-sky-50/60 border border-sky-200 text-slate-800',
-    mainBg: 'bg-slate-50',
-    cardBg: 'bg-white border border-sky-200 text-slate-900 shadow-xs',
-    cardBorder: 'border-sky-200',
-    textPrimary: 'text-slate-900',
-    textSecondary: 'text-slate-600',
-    accentColor: 'text-sky-700',
-    accentBadge: 'bg-sky-50 text-sky-700 border border-sky-200',
-    accentButton: 'bg-sky-700 hover:bg-sky-800 text-white font-semibold shadow-xs',
-    ribbonType: 'CLINICAL_QUEUE',
-  },
-
-  // 5. Administrator & Executive — Executive Governance & Audit Trail
+  // 4. Administrator & IT Security — Regulatory Surveillance Vault
   Admin: {
     id: 'admin-executive',
     primaryRole: 'Admin',
-    name: 'Executive Governance & Audit Oversight',
-    tagline: 'Statutory compliance, cryptographic audit ledger & facility telemetry command',
-    badge: 'ADMIN AUDIT',
+    name: 'IT Security Administrator & Regulatory Vault',
+    tagline: 'Clearance Level 3 with immutable HMAC chained audit verification & system telemetry',
+    badge: 'ADMIN AUDIT VAULT',
     isHighContrast: false,
     isFinancialLayout: false,
+    isDataDense: false,
+    tableDensity: 'compact',
+    fontSize: 'standard',
     workspaceBg: 'bg-slate-100 text-slate-900',
     headerBg: 'bg-slate-950 text-white border-b border-indigo-900/60',
     headerBorder: 'border-indigo-900/60',
@@ -582,10 +612,73 @@ export const ROLE_THEMES: Record<PrimaryRole, RoleThemeConfig> = {
     accentColor: 'text-indigo-600',
     accentBadge: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
     accentButton: 'bg-indigo-700 hover:bg-indigo-800 text-white font-semibold shadow-xs',
+    ribbonText: '🛡️ SECURITY & COMPLIANCE VAULT — Clearance Level 3 active. Real-time SHA-256 HMAC chained ledger monitoring and break-glass surveillance unlocked.',
     ribbonType: 'ADMIN_AUDIT',
   },
 
-  // 6. Pharmacy & Therapeutics
+  // 5. Clinician — Clinical Daylight Mode
+  Clinician: {
+    id: 'clinical-daylight',
+    primaryRole: 'Clinician',
+    name: 'Clinical Daylight (Evidence-Based EMR)',
+    tagline: 'Teal & hospital slate typography calibrated for acute consults, triage & ICD-11 coding',
+    badge: 'CLINICAL EMR',
+    isHighContrast: false,
+    isFinancialLayout: false,
+    isDataDense: false,
+    tableDensity: 'comfortable',
+    fontSize: 'standard',
+    workspaceBg: 'bg-slate-100 text-slate-900',
+    headerBg: 'bg-slate-900 text-white border-b border-slate-800',
+    headerBorder: 'border-slate-800',
+    headerBadge: 'bg-teal-950 text-teal-300 border border-teal-800 font-mono font-bold',
+    sidebarBg: 'bg-white border-r border-slate-200',
+    sidebarBorder: 'border-slate-200',
+    sidebarCardBg: 'bg-white border border-slate-200 text-slate-800',
+    mainBg: 'bg-slate-100',
+    cardBg: 'bg-white border border-slate-200 text-slate-900 shadow-xs',
+    cardBorder: 'border-slate-200',
+    textPrimary: 'text-slate-900',
+    textSecondary: 'text-slate-600',
+    accentColor: 'text-teal-700',
+    accentBadge: 'bg-teal-50 text-teal-700 border border-teal-200',
+    accentButton: 'bg-teal-700 hover:bg-teal-800 text-white font-semibold shadow-xs',
+    ribbonText: '🩺 EVIDENCE-BASED CLINICAL DAYLIGHT — High-readability font rendering for clinical consultations and diagnostic precision.',
+    ribbonType: 'CLINICAL_QUEUE',
+  },
+
+  // 6. Nursing Care — Triage Calm
+  Nurse: {
+    id: 'nursing-calm',
+    primaryRole: 'Nurse',
+    name: 'Triage Calm & Inpatient ADT',
+    tagline: 'Cyan telemetry & acute bed status monitoring with high triage color recognition',
+    badge: 'WARD NURSING',
+    isHighContrast: false,
+    isFinancialLayout: false,
+    isDataDense: false,
+    tableDensity: 'comfortable',
+    fontSize: 'standard',
+    workspaceBg: 'bg-sky-50/30 text-slate-900',
+    headerBg: 'bg-sky-950 text-sky-100 border-b border-sky-800',
+    headerBorder: 'border-sky-800',
+    headerBadge: 'bg-sky-900 text-sky-300 border border-sky-700 font-mono font-bold',
+    sidebarBg: 'bg-white border-r border-sky-200',
+    sidebarBorder: 'border-sky-200',
+    sidebarCardBg: 'bg-sky-50/60 border border-sky-200 text-slate-800',
+    mainBg: 'bg-slate-50',
+    cardBg: 'bg-white border border-sky-200 text-slate-900 shadow-xs',
+    cardBorder: 'border-sky-200',
+    textPrimary: 'text-slate-900',
+    textSecondary: 'text-slate-600',
+    accentColor: 'text-sky-700',
+    accentBadge: 'bg-sky-50 text-sky-700 border border-sky-200',
+    accentButton: 'bg-sky-700 hover:bg-sky-800 text-white font-semibold shadow-xs',
+    ribbonText: '🫀 NURSING STATION & TRIAGE CALM — Rapid bed turnover telemetry, acute acuity flags, and vitals monitoring.',
+    ribbonType: 'CLINICAL_QUEUE',
+  },
+
+  // 7. Pharmacy & Therapeutics
   Pharmacy: {
     id: 'pharmacy-amber',
     primaryRole: 'Pharmacy',
@@ -594,6 +687,9 @@ export const ROLE_THEMES: Record<PrimaryRole, RoleThemeConfig> = {
     badge: 'PHARMACY DISPENSE',
     isHighContrast: false,
     isFinancialLayout: false,
+    isDataDense: false,
+    tableDensity: 'comfortable',
+    fontSize: 'standard',
     workspaceBg: 'bg-amber-50/20 text-slate-900',
     headerBg: 'bg-amber-950 text-amber-100 border-b border-amber-800',
     headerBorder: 'border-amber-800',
@@ -609,10 +705,11 @@ export const ROLE_THEMES: Record<PrimaryRole, RoleThemeConfig> = {
     accentColor: 'text-amber-700',
     accentBadge: 'bg-amber-100 text-amber-800 border border-amber-300',
     accentButton: 'bg-amber-700 hover:bg-amber-800 text-white font-semibold shadow-xs',
+    ribbonText: '💊 PHARMACY FORMULARY & DISPENSING — High-visibility amber warnings, stockout velocity, and drug interaction safeguards.',
     ribbonType: 'CLINICAL_QUEUE',
   },
 
-  // 7. Radiology & Medical Imaging
+  // 8. Radiology & Medical Imaging
   Radiology: {
     id: 'radiology-dark',
     primaryRole: 'Radiology',
@@ -621,6 +718,9 @@ export const ROLE_THEMES: Record<PrimaryRole, RoleThemeConfig> = {
     badge: 'PACS DARKROOM',
     isHighContrast: true,
     isFinancialLayout: false,
+    isDataDense: false,
+    tableDensity: 'high-contrast',
+    fontSize: 'standard',
     workspaceBg: 'bg-zinc-950 text-zinc-100',
     headerBg: 'bg-black text-sky-300 border-b border-sky-800',
     headerBorder: 'border-sky-800',
@@ -636,6 +736,7 @@ export const ROLE_THEMES: Record<PrimaryRole, RoleThemeConfig> = {
     accentColor: 'text-sky-400',
     accentBadge: 'bg-sky-950 text-sky-300 border border-sky-700',
     accentButton: 'bg-sky-600 hover:bg-sky-500 text-white font-bold shadow-sm',
+    ribbonText: '🩻 PACS DARKROOM REVIEW — DICOM-calibrated darkroom palette for radiographic inspection.',
     ribbonType: 'LAB_CONTRAST',
   },
 };
