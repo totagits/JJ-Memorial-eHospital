@@ -2,13 +2,56 @@ import React from 'react';
 import { ShieldAlert, KeyRound, AlertTriangle, UserCheck, Lock } from 'lucide-react';
 import { UserAccount, UserRole } from '../types/auth';
 
-export type PrimaryRole = 'Admin' | 'Doctor' | 'Nurse' | 'Finance' | 'Pharmacy';
+/**
+ * Enterprise Canonical Roles
+ * Tailored for clinical and administrative segregation of duties (SoD)
+ */
+export type PrimaryRole = 
+  | 'LIS'          // Medical Laboratory Scientist / Pathology / Blood Bank
+  | 'Billing'      // Cashier, Patient Accounts, Revenue Cycle, Finance
+  | 'Clinician'    // Attending Physician, Outpatient OPD, Doctors, Specialists
+  | 'Nurse'        // Triage, Inpatient Wards, Nursing Care
+  | 'Pharmacy'     // Lead Clinical Pharmacist, Formulary, Dispense
+  | 'Admin'        // Executive CEO, Medical Director, IT Security Admin
+  | 'Radiology';   // Medical Imaging, PACS Technologist
 
 export type AccessLevel = 'NONE' | 'READ' | 'WRITE' | 'ADMIN';
 
-// Role mapping matrix: maps all detailed roles to the 5 standard enterprise roles
+// Role mapping matrix: maps all detailed system roles to canonical primary roles
 export const PRIMARY_ROLE_MAP: Record<UserRole | string, PrimaryRole> = {
-  // Admin group
+  // 1. Diagnostic Laboratory (LIS)
+  lab_scientist: 'LIS',
+  LIS: 'LIS',
+  Laboratory: 'LIS',
+
+  // 2. Billing & Accounts (Finance / Cashier)
+  cashier_billing: 'Billing',
+  finance_accountant: 'Billing',
+  front_desk_registration: 'Billing',
+  hr_payroll: 'Billing',
+  Billing: 'Billing',
+  Finance: 'Billing',
+
+  // 3. Clinician (Doctors / Outpatient EMR)
+  physician: 'Clinician',
+  Clinician: 'Clinician',
+  Doctor: 'Clinician',
+
+  // 4. Nursing Care
+  head_nurse: 'Nurse',
+  nurse_triage: 'Nurse',
+  Nurse: 'Nurse',
+
+  // 5. Pharmacy & Formulary
+  pharmacist: 'Pharmacy',
+  procurement_stores: 'Pharmacy',
+  Pharmacy: 'Pharmacy',
+
+  // 6. Medical Imaging & Radiology
+  radiologist_technologist: 'Radiology',
+  Radiology: 'Radiology',
+
+  // 7. Administration & Executive Governance
   executive_ceo: 'Admin',
   it_security_admin: 'Admin',
   medical_director: 'Admin',
@@ -16,192 +59,234 @@ export const PRIMARY_ROLE_MAP: Record<UserRole | string, PrimaryRole> = {
   biomedical_facilities: 'Admin',
   Admin: 'Admin',
 
-  // Doctor group
-  physician: 'Doctor',
-  Doctor: 'Doctor',
-
-  // Nurse group
-  head_nurse: 'Nurse',
-  nurse_triage: 'Nurse',
-  Nurse: 'Nurse',
-
-  // Finance group
-  cashier_billing: 'Finance',
-  finance_accountant: 'Finance',
-  front_desk_registration: 'Finance',
-  hr_payroll: 'Finance',
-  Finance: 'Finance',
-
-  // Pharmacy group
-  pharmacist: 'Pharmacy',
-  procurement_stores: 'Pharmacy',
-  Pharmacy: 'Pharmacy',
-
   // Fallback
   patient: 'Nurse',
 };
 
-// Access Level Matrix per Primary Role for each Staff Workspace module
+/**
+ * Module Access Matrix per Primary Role
+ * Strictly defines access levels for all 20 clinical, financial, and operations modules.
+ * Ensures complete Segregation of Duties (SoD).
+ */
 export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLevel>> = {
-  // Outpatient (OPD) & Clinical EMR
-  opd: {
-    Doctor: 'ADMIN',
+  // 1. Diagnostic Laboratory (LIS)
+  lab: {
+    LIS: 'ADMIN',
+    Clinician: 'WRITE',
+    Nurse: 'READ',
+    Admin: 'ADMIN',
+    Pharmacy: 'READ',
+    Radiology: 'READ',
+    Billing: 'NONE', // Billing staff have NO access to Laboratory LIS
+  },
+
+  // 2. Blood Bank & Transfusions
+  blood_bank: {
+    LIS: 'ADMIN',
+    Clinician: 'WRITE',
     Nurse: 'WRITE',
     Admin: 'ADMIN',
-    Finance: 'READ',
+    Pharmacy: 'READ',
+    Radiology: 'NONE',
+    Billing: 'NONE',
+  },
+
+  // 3. Patient Billing & Invoicing (Strictly Segregated)
+  billing: {
+    Billing: 'ADMIN',
+    Admin: 'ADMIN',
+    LIS: 'NONE',       // Laboratory Scientist has ZERO access to Billing
+    Clinician: 'NONE', // Clinicians have ZERO access to Billing invoices
+    Nurse: 'NONE',     // Nurses have ZERO access to Billing invoices
+    Radiology: 'NONE',
     Pharmacy: 'READ',
   },
-  // Triage & Acute Nursing
+
+  // 4. General Ledger (GL) & Financial Accounts
+  gl: {
+    Billing: 'ADMIN',
+    Admin: 'ADMIN',
+    LIS: 'NONE',       // Laboratory Scientist has ZERO access to General Ledger
+    Clinician: 'NONE',
+    Nurse: 'NONE',
+    Pharmacy: 'NONE',
+    Radiology: 'NONE',
+  },
+
+  // 5. Insurance Verification & Payer Gateway
+  insurance: {
+    Billing: 'ADMIN',
+    Admin: 'ADMIN',
+    Clinician: 'READ',
+    Nurse: 'READ',
+    Pharmacy: 'READ',
+    LIS: 'NONE',
+    Radiology: 'NONE',
+  },
+
+  // 6. HR, Staff & Payroll
+  hr: {
+    Billing: 'ADMIN',
+    Admin: 'ADMIN',
+    LIS: 'NONE',
+    Clinician: 'NONE',
+    Nurse: 'NONE',
+    Pharmacy: 'NONE',
+    Radiology: 'NONE',
+  },
+
+  // 7. Outpatient (OPD) & Clinical EMR Charts
+  opd: {
+    Clinician: 'ADMIN',
+    Nurse: 'WRITE',
+    Admin: 'ADMIN',
+    Billing: 'READ',
+    Pharmacy: 'READ',
+    LIS: 'NONE',       // Laboratory Scientist has ZERO access to OPD clinical encounters
+    Radiology: 'NONE',
+  },
+
+  // 8. Triage & Acute Nursing Assessment
   triage: {
     Nurse: 'ADMIN',
-    Doctor: 'ADMIN',
+    Clinician: 'ADMIN',
     Admin: 'ADMIN',
-    Finance: 'READ',
+    Billing: 'READ',
     Pharmacy: 'READ',
+    LIS: 'NONE',
+    Radiology: 'NONE',
   },
-  // Inpatient Wards & Beds (ADT)
+
+  // 9. Inpatient Wards & Beds (ADT)
   inpatient: {
     Nurse: 'ADMIN',
-    Doctor: 'WRITE',
+    Clinician: 'WRITE',
     Admin: 'ADMIN',
-    Finance: 'READ',
+    Billing: 'READ',
     Pharmacy: 'READ',
+    LIS: 'NONE',
+    Radiology: 'NONE',
   },
-  // Diagnostic Laboratory (LIS)
-  lab: {
-    Doctor: 'WRITE',
-    Nurse: 'READ',
-    Admin: 'ADMIN',
-    Pharmacy: 'READ',
-    Finance: 'NONE',
-  },
-  // Blood Bank & Transfusions
-  blood_bank: {
-    Doctor: 'WRITE',
-    Nurse: 'WRITE',
-    Admin: 'ADMIN',
-    Pharmacy: 'READ',
-    Finance: 'NONE',
-  },
-  // Radiology & Imaging (PACS)
+
+  // 10. Radiology & Medical Imaging (PACS)
   radiology: {
-    Doctor: 'WRITE',
+    Radiology: 'ADMIN',
+    Clinician: 'WRITE',
     Nurse: 'READ',
     Admin: 'ADMIN',
+    LIS: 'READ',
+    Billing: 'NONE',
     Pharmacy: 'NONE',
-    Finance: 'NONE',
   },
-  // Biomedical Resources & Equipment
-  resources: {
-    Doctor: 'WRITE',
-    Nurse: 'WRITE',
-    Admin: 'ADMIN',
-    Pharmacy: 'READ',
-    Finance: 'READ',
-  },
-  // Pharmacy & Drug Dispense
+
+  // 11. Pharmacy Formulary & Drug Dispense
   pharmacy: {
     Pharmacy: 'ADMIN',
-    Doctor: 'WRITE',
+    Clinician: 'WRITE',
     Nurse: 'READ',
     Admin: 'ADMIN',
-    Finance: 'READ',
+    Billing: 'READ',
+    LIS: 'NONE',
+    Radiology: 'NONE',
   },
-  // Insurance Verification & Payer Gateway
-  insurance: {
-    Finance: 'ADMIN',
-    Admin: 'ADMIN',
-    Doctor: 'READ',
-    Nurse: 'READ',
-    Pharmacy: 'READ',
-  },
-  // Patient Billing & Invoicing
-  billing: {
-    Finance: 'ADMIN',
-    Admin: 'ADMIN',
-    Doctor: 'NONE',
-    Nurse: 'NONE',
-    Pharmacy: 'READ',
-  },
-  // General Ledger (GL) & Financial Reporting
-  gl: {
-    Finance: 'ADMIN',
-    Admin: 'ADMIN',
-    Doctor: 'NONE',
-    Nurse: 'NONE',
-    Pharmacy: 'NONE',
-  },
-  // Central Procurement & Stores
+
+  // 12. Central Procurement & Stores
   procurement: {
     Pharmacy: 'ADMIN',
-    Finance: 'WRITE',
+    Billing: 'WRITE',
     Admin: 'ADMIN',
-    Doctor: 'READ',
+    LIS: 'READ',
+    Radiology: 'READ',
+    Clinician: 'READ',
     Nurse: 'READ',
   },
-  // HR, Staff & Payroll
-  hr: {
-    Finance: 'ADMIN',
+
+  // 13. Biomedical Resources & Equipment
+  resources: {
     Admin: 'ADMIN',
-    Doctor: 'NONE',
-    Nurse: 'NONE',
-    Pharmacy: 'NONE',
+    Clinician: 'WRITE',
+    Nurse: 'WRITE',
+    Radiology: 'WRITE',
+    LIS: 'READ',
+    Pharmacy: 'READ',
+    Billing: 'READ',
   },
-  // Staff Shift Scheduling
+
+  // 14. Staff Shift Scheduling & Rosters
   scheduling: {
     Nurse: 'ADMIN',
-    Doctor: 'WRITE',
+    Clinician: 'WRITE',
     Admin: 'ADMIN',
-    Finance: 'READ',
+    Billing: 'READ',
     Pharmacy: 'READ',
+    LIS: 'READ',
+    Radiology: 'READ',
   },
-  // Biomedical Engineering & Facilities
+
+  // 15. Biomedical Engineering & Facilities
   assets: {
     Admin: 'ADMIN',
-    Doctor: 'READ',
-    Nurse: 'READ',
     Pharmacy: 'WRITE',
-    Finance: 'READ',
+    Clinician: 'READ',
+    Nurse: 'READ',
+    LIS: 'READ',
+    Radiology: 'READ',
+    Billing: 'READ',
   },
-  // Quality & Safety Incident Management
+
+  // 16. Quality & Safety Incident Management
   quality: {
     Admin: 'ADMIN',
-    Doctor: 'WRITE',
+    LIS: 'WRITE',
+    Clinician: 'WRITE',
     Nurse: 'WRITE',
     Pharmacy: 'WRITE',
-    Finance: 'WRITE',
+    Billing: 'WRITE',
+    Radiology: 'WRITE',
   },
-  // Immutable Audit Trail
+
+  // 17. Immutable Audit Trail & Regulatory Surveillance
   audit_trail: {
     Admin: 'ADMIN',
-    Finance: 'READ',
-    Doctor: 'READ',
+    Billing: 'READ',
+    Clinician: 'READ',
+    LIS: 'NONE',
     Nurse: 'NONE',
     Pharmacy: 'NONE',
+    Radiology: 'NONE',
   },
-  // Executive Intelligence (BI)
+
+  // 18. Executive Intelligence (BI)
   executive_bi: {
     Admin: 'ADMIN',
-    Finance: 'WRITE',
-    Doctor: 'READ',
+    Billing: 'WRITE',
+    Clinician: 'READ',
+    LIS: 'NONE',
     Nurse: 'NONE',
     Pharmacy: 'NONE',
+    Radiology: 'NONE',
   },
-  // Command Center & HMIS
+
+  // 19. Facility Command Center & Telemetry
   command_center: {
     Admin: 'ADMIN',
-    Doctor: 'READ',
+    Clinician: 'READ',
     Nurse: 'READ',
-    Finance: 'READ',
+    Billing: 'READ',
     Pharmacy: 'READ',
+    LIS: 'READ',
+    Radiology: 'READ',
   },
-  // Internal Staff Messaging
+
+  // 20. Intra-Departmental Staff Messaging
   messages: {
-    Admin: 'ADMIN',
-    Doctor: 'ADMIN',
+    LIS: 'ADMIN',
+    Billing: 'ADMIN',
+    Clinician: 'ADMIN',
     Nurse: 'ADMIN',
-    Finance: 'ADMIN',
     Pharmacy: 'ADMIN',
+    Admin: 'ADMIN',
+    Radiology: 'ADMIN',
   },
 };
 
@@ -213,16 +298,17 @@ const ACCESS_LEVEL_PRIORITY: Record<AccessLevel, number> = {
 };
 
 /**
- * RBACService manages user roles and provides access verification
+ * RBACService manages user roles, permissions, and dynamic workstation visibility.
  */
 export const RBACService = {
   /**
-   * Resolve any user's role to one of the 5 canonical primary roles
+   * Resolve any user's role to one of the canonical primary roles:
+   * 'LIS', 'Billing', 'Clinician', 'Nurse', 'Pharmacy', 'Admin', 'Radiology'
    */
   getPrimaryRole(userOrRole?: UserAccount | UserRole | string): PrimaryRole {
-    if (!userOrRole) return 'Doctor';
+    if (!userOrRole) return 'Clinician';
     const roleString = typeof userOrRole === 'object' ? userOrRole.role : userOrRole;
-    return PRIMARY_ROLE_MAP[roleString] || 'Doctor';
+    return PRIMARY_ROLE_MAP[roleString] || 'Clinician';
   },
 
   /**
@@ -248,39 +334,59 @@ export const RBACService = {
   },
 
   /**
-   * Convenience check for write permission
+   * Check if user has write/record creation permission
    */
   canWrite(userOrRole?: UserAccount | UserRole | string, moduleId: string = ''): boolean {
     return this.hasAccess(userOrRole, moduleId, 'WRITE');
   },
 
   /**
-   * Convenience check for admin permission
+   * Check if user has administrative/sign-off permission
    */
   canAdminister(userOrRole?: UserAccount | UserRole | string, moduleId: string = ''): boolean {
     return this.hasAccess(userOrRole, moduleId, 'ADMIN');
   },
 
   /**
-   * Returns list of all modules where user has at least READ access
+   * Dynamic Sidebar Navigation Filter:
+   * Returns ONLY the list of module IDs the user is authorized to see (accessLevel >= READ).
+   * Unrelated modules are completely filtered out.
    */
   getAuthorizedModules(userOrRole?: UserAccount | UserRole | string): string[] {
     const primaryRole = this.getPrimaryRole(userOrRole);
-    return Object.keys(MODULE_ACCESS_MATRIX).filter(modId => {
-      const level = MODULE_ACCESS_MATRIX[modId]?.[primaryRole] || 'NONE';
-      return level !== 'NONE';
+    return Object.keys(MODULE_ACCESS_MATRIX).filter(moduleId => {
+      const level = MODULE_ACCESS_MATRIX[moduleId]?.[primaryRole];
+      return level && level !== 'NONE';
     });
   },
 
   /**
-   * Returns authorized roles for display on access denied cards
+   * Get the default landing workstation for any user role
+   */
+  getPrimaryWorkstation(userOrRole?: UserAccount | UserRole | string): string {
+    const primaryRole = this.getPrimaryRole(userOrRole);
+    switch (primaryRole) {
+      case 'LIS': return 'lab';
+      case 'Billing': return 'billing';
+      case 'Clinician': return 'opd';
+      case 'Nurse': return 'triage';
+      case 'Pharmacy': return 'pharmacy';
+      case 'Radiology': return 'radiology';
+      case 'Admin': return 'executive_bi';
+      default: return 'opd';
+    }
+  },
+
+  /**
+   * Get all authorized roles for a given module at a given level
    */
   getAuthorizedRolesForModule(moduleId: string, minLevel: AccessLevel = 'READ'): PrimaryRole[] {
-    const rules = MODULE_ACCESS_MATRIX[moduleId] || {};
-    return (Object.keys(rules) as PrimaryRole[]).filter(role => {
-      const level = rules[role] || 'NONE';
-      return ACCESS_LEVEL_PRIORITY[level] >= ACCESS_LEVEL_PRIORITY[minLevel];
-    });
+    const moduleRules = MODULE_ACCESS_MATRIX[moduleId];
+    if (!moduleRules) return ['Admin', 'Clinician'];
+    const minPriority = ACCESS_LEVEL_PRIORITY[minLevel];
+    return (Object.keys(moduleRules) as PrimaryRole[]).filter(
+      role => ACCESS_LEVEL_PRIORITY[moduleRules[role]] >= minPriority
+    );
   },
 };
 
@@ -312,7 +418,7 @@ export function withRoleAccess<P extends object = {}>(
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300 font-mono">
-                  RBAC PERMISSION DENIED ({requiredLevel})
+                  RBAC POLICY BOUNDARY ENFORCED ({requiredLevel})
                 </span>
                 <span className="text-xs font-mono text-slate-400">MODULE: {moduleId}</span>
               </div>
@@ -320,8 +426,7 @@ export function withRoleAccess<P extends object = {}>(
                 Access Restricted: {friendlyName}
               </h3>
               <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                Your active role (<strong className="text-slate-800">{primaryRole}</strong>) does not have the required{' '}
-                <strong className="text-rose-700">{requiredLevel}</strong> access level for this clinical or financial resource under J & J Memorial Governance.
+                Under J & J Memorial clinical governance and statutory Segregation of Duties (SoD), your active role (<strong className="text-slate-800">{primaryRole}</strong>) is strictly segregated from this workstation.
               </p>
             </div>
           </div>
@@ -333,12 +438,12 @@ export function withRoleAccess<P extends object = {}>(
               </span>
               <p><span className="font-semibold text-slate-700">Staff Member:</span> {currentUser?.fullName || 'Active User'}</p>
               <p><span className="font-semibold text-slate-700">Enterprise Role:</span> {primaryRole} ({currentUser?.role})</p>
-              <p><span className="font-semibold text-slate-700">Current Level for {moduleId}:</span> <span className="font-mono text-rose-700 font-bold">{RBACService.getAccessLevel(currentUser, moduleId)}</span></p>
+              <p><span className="font-semibold text-slate-700">Access for {moduleId}:</span> <span className="font-mono text-rose-700 font-bold">{RBACService.getAccessLevel(currentUser, moduleId)}</span></p>
             </div>
 
             <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-1.5 text-xs">
               <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block">
-                Required Authorization
+                Authorized Personnel
               </span>
               <p className="text-amber-900">
                 Minimum access level required: <strong className="font-mono font-bold text-amber-950">{requiredLevel}</strong>
@@ -351,7 +456,7 @@ export function withRoleAccess<P extends object = {}>(
 
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-xs text-slate-500">
-              Need immediate emergency access? Break-glass override is available for urgent resuscitation.
+              Need emergency resuscitation access? Break-glass override is available for acute trauma cases.
             </p>
             {onBreakGlass && (
               <button

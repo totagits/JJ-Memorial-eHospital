@@ -70,11 +70,8 @@ import { BiometricLockOverlay } from './BiometricLockOverlay';
 import { PatientRegistrationModal } from './PatientRegistrationModal';
 import { DowntimeContinuityModal } from './DowntimeContinuityModal';
 import { DeploymentRunbookModal } from './DeploymentRunbookModal';
-import { isRoleAuthorizedForModule, getRoleScopeConfig } from '../../types/rbac';
-import { RbacAccessBoundary } from './RbacAccessBoundary';
-import { RoleAnalyticsPanel } from './RoleAnalyticsPanel';
 import { RBACService, withRoleAccess } from '../../services/rbacService';
-import { UserRoleDashboard } from './UserRoleDashboard';
+import { RoleDashboard } from './RoleDashboard';
 
 // Wrapped Workstation Components with withRoleAccess HOC
 const SecureClinicalWorkstation = withRoleAccess(ClinicalWorkstation, 'opd', 'READ', 'Outpatient (OPD) & EMR');
@@ -107,6 +104,13 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
   // Default to Dr. J. Saydee Kollie (Medical Director) or Dr. Evelyn Sirleaf-Gbotoe
   const [currentUser, setCurrentUser] = useState<UserAccount>(db.users[1]); // Dr. Evelyn
   const [activeModule, setActiveModule] = useState<string>('opd');
+
+  // RBAC Segregation: Automatically redirect to primary workstation if activeModule is unauthorized for current user
+  useEffect(() => {
+    if (!RBACService.hasAccess(currentUser, activeModule, 'READ')) {
+      setActiveModule(RBACService.getPrimaryWorkstation(currentUser));
+    }
+  }, [currentUser, activeModule]);
 
   // Offline & IndexedDB Caching Telemetry
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -225,9 +229,8 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
     { id: 'quality', label: 'Quality & Safety Incidents', icon: AlertCircle },
   ];
 
-  const authorizedNavItems = navItems.filter(item => isRoleAuthorizedForModule(currentUser.role, item.id));
-  const restrictedNavItems = navItems.filter(item => !isRoleAuthorizedForModule(currentUser.role, item.id));
-  const currentScope = getRoleScopeConfig(currentUser.role);
+  const authorizedModules = RBACService.getAuthorizedModules(currentUser);
+  const authorizedNavItems = navItems.filter(item => authorizedModules.includes(item.id));
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
@@ -365,9 +368,9 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
                 setCurrentUser(u);
                 // Automatically log user role switch to the audit trail
                 auditTrailService.logLogin(u, 'BIOMETRIC_ROLE_SWITCH', '192.168.10.45 (Local Clinical Terminal)');
-                const scope = getRoleScopeConfig(u.role);
-                if (!isRoleAuthorizedForModule(u.role, activeModule)) {
-                  setActiveModule(scope.primaryWorkstation);
+                const primaryWs = RBACService.getPrimaryWorkstation(u);
+                if (!RBACService.hasAccess(u, activeModule, 'READ')) {
+                  setActiveModule(primaryWs);
                 }
               }}
             />
@@ -445,43 +448,6 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
                 })}
               </nav>
             </div>
-
-            {/* Segregated / Restricted Modules */}
-            {restrictedNavItems.length > 0 && (
-              <div className="pt-2 border-t border-slate-100">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between px-2 mb-1.5">
-                  <span className="flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-slate-400" />
-                    Restricted Workstations
-                  </span>
-                  <span className="text-[9px] text-slate-400 font-mono font-medium">SoD Enforced</span>
-                </span>
-                <nav className="space-y-0.5">
-                  {restrictedNavItems.map(item => {
-                    const Icon = item.icon;
-                    const isActive = activeModule === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => setActiveModule(item.id)}
-                        className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors text-left cursor-pointer ${
-                          isActive
-                            ? 'bg-rose-50 text-rose-900 border border-rose-200 font-semibold'
-                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-                        }`}
-                        title="Restricted by RBAC Segregation of Duties. Click to view scope boundary."
-                      >
-                        <div className="flex items-center gap-2 truncate">
-                          <Icon className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                          <span className="truncate">{item.label}</span>
-                        </div>
-                        <Lock className="w-3 h-3 text-slate-300 shrink-0 ml-1" />
-                      </button>
-                    );
-                  })}
-                </nav>
-              </div>
-            )}
           </div>
 
           {/* VOA East IndexedDB Offline Resiliency Card */}
@@ -563,14 +529,8 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
         {/* Dynamic Workspace Workstation View */}
         <main className="flex-1 min-w-0 space-y-6">
-          {/* UserRoleDashboard: Dedicated role-specific analytics cards for every staff member */}
-          <UserRoleDashboard
-            currentUser={currentUser}
-            onNavigateModule={m => setActiveModule(m)}
-          />
-
-          {/* Role Decision Support & Real-Time Analytic Tool */}
-          <RoleAnalyticsPanel
+          {/* Dynamic Role-Specific Analytics Dashboard (Powered by Recharts) */}
+          <RoleDashboard
             currentUser={currentUser}
             onNavigateModule={m => setActiveModule(m)}
           />

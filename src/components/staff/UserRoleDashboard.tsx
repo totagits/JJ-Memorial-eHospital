@@ -3,7 +3,7 @@ import {
   Users, Stethoscope, HeartPulse, DollarSign, Pill, Shield, 
   Activity, ArrowRight, AlertCircle, CheckCircle2, Clock, 
   TrendingUp, Bed, FileText, Zap, ChevronRight, Droplet, 
-  BarChart3, RefreshCw, KeyRound, AlertTriangle
+  BarChart3, RefreshCw, KeyRound, AlertTriangle, Microscope, Scan
 } from 'lucide-react';
 import { UserAccount } from '../../types/auth';
 import { RBACService, PrimaryRole } from '../../services/rbacService';
@@ -79,8 +79,8 @@ export const UserRoleDashboard: React.FC<UserRoleDashboardProps> = ({
 
       {/* Role-Specific Analytics Dashboard Content */}
 
-      {/* 1. DOCTOR ROLE DASHBOARD */}
-      {primaryRole === 'Doctor' && (
+      {/* 1. CLINICIAN ROLE DASHBOARD */}
+      {primaryRole === 'Clinician' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-teal-50/70 border border-teal-200/80 rounded-xl p-4">
@@ -222,8 +222,8 @@ export const UserRoleDashboard: React.FC<UserRoleDashboardProps> = ({
         </div>
       )}
 
-      {/* 3. FINANCE ROLE DASHBOARD */}
-      {primaryRole === 'Finance' && (
+      {/* 3. BILLING ROLE DASHBOARD */}
+      {primaryRole === 'Billing' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-4">
@@ -347,7 +347,144 @@ export const UserRoleDashboard: React.FC<UserRoleDashboardProps> = ({
         </div>
       )}
 
-      {/* 5. ADMIN ROLE DASHBOARD */}
+      {/* 5. LABORATORY ROLE DASHBOARD (For Medical Laboratory Scientist LIS) */}
+      {primaryRole === 'LIS' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4">
+              <div className="flex items-center justify-between text-amber-800 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Pending Specimen Runs</span>
+                <Microscope className="w-4 h-4 text-amber-700" />
+              </div>
+              <div className="text-2xl font-extrabold text-amber-950">{pendingLabs} Requisitions</div>
+              <p className="text-[11px] text-amber-700 mt-1">Awaiting analytical test execution</p>
+            </div>
+
+            <div className="bg-rose-50/70 border border-rose-200/80 rounded-xl p-4">
+              <div className="flex items-center justify-between text-rose-800 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Critical Panic Values</span>
+                <AlertTriangle className="w-4 h-4 text-rose-700" />
+              </div>
+              <div className="text-2xl font-extrabold text-rose-950">
+                {db.labOrders?.filter(o => o.results?.isCritical === true).length || 0} Alerts
+              </div>
+              <p className="text-[11px] text-rose-700 mt-1">Requires STAT clinician notification</p>
+            </div>
+
+            <div className="bg-red-50/70 border border-red-200/80 rounded-xl p-4">
+              <div className="flex items-center justify-between text-red-800 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Blood Bank Reserve</span>
+                <Droplet className="w-4 h-4 text-red-700" />
+              </div>
+              <div className="text-2xl font-extrabold text-red-950">
+                {db.bloodUnits?.length || 18} Units
+              </div>
+              <p className="text-[11px] text-red-700 mt-1">O- / A+ / B+ cold-chain verified</p>
+            </div>
+
+            <div className="bg-teal-50/70 border border-teal-200/80 rounded-xl p-4">
+              <div className="flex items-center justify-between text-teal-800 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Turnaround Time (TAT)</span>
+                <Clock className="w-4 h-4 text-teal-700" />
+              </div>
+              <div className="text-2xl font-extrabold text-teal-950">38 min</div>
+              <p className="text-[11px] text-teal-700 mt-1">Safely below STAT threshold (&lt;45m)</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">Diagnostic Decision Support: Automated Critical Value Dispatch</h4>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Hematology analyzer 3-level quality control within 1.5 standard deviations. Critical findings automatically dispatch STAT alerts to Attending Physicians.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => onNavigateModule('blood_bank')}
+                className="bg-red-800 hover:bg-red-900 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Droplet className="w-3.5 h-3.5" />
+                <span>Blood Bank</span>
+              </button>
+              <button
+                onClick={() => onNavigateModule('lab')}
+                className="bg-teal-800 hover:bg-teal-900 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Microscope className="w-3.5 h-3.5" />
+                <span>Launch Diagnostic LIS</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. RADIOLOGY ROLE DASHBOARD */}
+      {primaryRole === 'Radiology' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-sky-50/70 border border-sky-200/80 rounded-xl p-4">
+              <div className="flex items-center justify-between text-sky-800 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Pending PACS Studies</span>
+                <Scan className="w-4 h-4 text-sky-700" />
+              </div>
+              <div className="text-2xl font-extrabold text-sky-950">
+                {db.radiologyStudies?.filter(s => s.status !== 'RELEASED').length || 3} Studies
+              </div>
+              <p className="text-[11px] text-sky-700 mt-1">Digital radiography & ultrasound</p>
+            </div>
+
+            <div className="bg-rose-50/70 border border-rose-200/80 rounded-xl p-4">
+              <div className="flex items-center justify-between text-rose-800 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Emergency STAT Scans</span>
+                <AlertTriangle className="w-4 h-4 text-rose-700" />
+              </div>
+              <div className="text-2xl font-extrabold text-rose-950">
+                {db.radiologyStudies?.filter(s => s.urgency === 'STAT_EMERGENCY').length || 1} Scans
+              </div>
+              <p className="text-[11px] text-rose-700 mt-1">Acute trauma resuscitation</p>
+            </div>
+
+            <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-4">
+              <div className="flex items-center justify-between text-emerald-800 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Radiation Safety Score</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+              </div>
+              <div className="text-2xl font-extrabold text-emerald-950">100%</div>
+              <p className="text-[11px] text-emerald-700 mt-1">ALARA compliance certified</p>
+            </div>
+
+            <div className="bg-teal-50/70 border border-teal-200/80 rounded-xl p-4">
+              <div className="flex items-center justify-between text-teal-800 mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Dicom PACS Online</span>
+                <Activity className="w-4 h-4 text-teal-700" />
+              </div>
+              <div className="text-2xl font-extrabold text-teal-950">Operational</div>
+              <p className="text-[11px] text-teal-700 mt-1">Zero-loss PACS archive linked</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">Radiology Diagnostic Throughput</h4>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Direct integration with Outpatient EMR and Inpatient Trauma Wards for instantaneous DICOM review.
+              </p>
+            </div>
+            <button
+              onClick={() => onNavigateModule('radiology')}
+              className="bg-teal-800 hover:bg-teal-900 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Scan className="w-3.5 h-3.5" />
+              <span>Launch Radiology PACS</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 7. ADMIN ROLE DASHBOARD */}
       {primaryRole === 'Admin' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
