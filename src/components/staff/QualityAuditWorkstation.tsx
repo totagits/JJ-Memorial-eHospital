@@ -17,9 +17,10 @@ export const QualityAuditWorkstation: React.FC<QualityAuditWorkstationProps> = (
   const [incidentSeverity, setIncidentSeverity] = useState<'NEAR_MISS' | 'MINOR' | 'MODERATE' | 'SENTINEL_EVENT'>('NEAR_MISS');
   const [incidentDesc, setIncidentDesc] = useState('');
 
+  const auditLogsList = db.auditLogs || [];
   const filteredAuditLogs = searchMrn.trim()
-    ? db.auditLogs.filter(l => l.patientMrn?.includes(searchMrn.trim()) || l.details.toLowerCase().includes(searchMrn.toLowerCase()))
-    : db.auditLogs;
+    ? auditLogsList.filter(l => l.patientMrn?.includes(searchMrn.trim()) || l.details.toLowerCase().includes(searchMrn.toLowerCase()))
+    : auditLogsList;
 
   const handleLogIncident = () => {
     if (!incidentDesc.trim()) {
@@ -100,7 +101,7 @@ export const QualityAuditWorkstation: React.FC<QualityAuditWorkstationProps> = (
               : 'text-slate-500 hover:text-slate-900'
           }`}
         >
-          Tamper-Evident Audit Event Ledger ({db.auditLogs.length})
+          Tamper-Evident Audit Event Ledger ({auditLogsList.length})
         </button>
       </div>
 

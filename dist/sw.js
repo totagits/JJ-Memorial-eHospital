@@ -51,8 +51,18 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // Bypass cache for external cloud bucket uploads and API proxy routes
-  if (url.origin.includes('storage.googleapis.com') || url.pathname.startsWith('/api/')) {
+  // Bypass cache for external cloud bucket uploads, API proxy routes, Vite internal modules, and dev/preview environments
+  if (
+    url.origin.includes('storage.googleapis.com') ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.search.includes('v=') ||
+    url.hostname.includes('run.app') ||
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1'
+  ) {
     return;
   }
 

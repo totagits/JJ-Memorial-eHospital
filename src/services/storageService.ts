@@ -154,6 +154,21 @@ function loadInitialState(): AppDatabaseState {
         if (!parsed.insurancePolicies) {
           parsed.insurancePolicies = INITIAL_INSURANCE_POLICIES;
         }
+        if (!parsed.auditLogs) {
+          parsed.auditLogs = INITIAL_AUDIT_LOGS;
+        }
+        if (!parsed.incidents) {
+          parsed.incidents = INITIAL_INCIDENTS;
+        }
+        if (!parsed.assets) {
+          parsed.assets = INITIAL_BIOMEDICAL_ASSETS;
+        }
+        if (!parsed.downtimeState) {
+          parsed.downtimeState = INITIAL_DOWNTIME_STATE;
+        }
+        if (!parsed.downtimeRecords) {
+          parsed.downtimeRecords = INITIAL_DOWNTIME_RECORDS;
+        }
         return parsed;
       }
     }
