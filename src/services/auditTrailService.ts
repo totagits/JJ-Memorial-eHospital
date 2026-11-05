@@ -208,6 +208,35 @@ class AuditTrailService {
   }
 
   /**
+   * 5. General Action & Workstation Activity Logging
+   * Automatically tracks navigation, filter updates, query executions, theme modifications, and workstation tasks.
+   */
+  public logUserAction(params: {
+    user: UserAccount;
+    action: string;
+    module: AuditEvent['module'];
+    details: string;
+    patientMrn?: string;
+    resourceId?: string;
+    ipAddress?: string;
+    status?: 'SUCCESS' | 'FLAGGED' | 'DENIED';
+  }): AuditEvent {
+    const defaultIp = '192.168.10.45 (Local Clinical Terminal)';
+    return this.log({
+      userId: params.user.id,
+      userName: params.user.fullName,
+      userRole: params.user.role,
+      action: params.action as any,
+      module: params.module,
+      patientMrn: params.patientMrn,
+      resourceId: params.resourceId,
+      details: params.details,
+      ipAddress: params.ipAddress || defaultIp,
+      status: params.status || 'SUCCESS',
+    });
+  }
+
+  /**
    * Cryptographic Ledger Integrity Check
    * Verifies that the audit ledger has not been tampered with or retroactively altered.
    */

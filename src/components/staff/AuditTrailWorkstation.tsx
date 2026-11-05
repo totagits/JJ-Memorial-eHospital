@@ -271,14 +271,17 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
       {/* Header & Tabs */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="font-extrabold text-slate-900 text-base">Audit Trail, Compliance & Cloud Recovery</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-extrabold text-slate-900 text-base">Administrator Audit Trail & Compliance Ledger</h2>
+            <span className="text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-700 px-2 py-0.5 rounded">
+              ADMINISTRATOR CLEARANCE LEVEL 3
+            </span>
             <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-800 border border-teal-200 px-2 py-0.5 rounded">
               STATUTORY COMPLIANCE
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Automated tamper-evident event logging (logins, record edits, patient data exports) & Service Worker periodic encrypted cloud snapshots.
+            Centralized, immutable audit logging tracking all user actions in the StaffWorkspace (logins, navigation, patient chart edits, exports) with SHA-256 HMAC cryptographic chain verification.
           </p>
         </div>
 

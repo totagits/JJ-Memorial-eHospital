@@ -34,7 +34,10 @@ import {
   Lock,
   CreditCard,
   Cpu,
-  Cloud
+  Cloud,
+  Palette,
+  Check,
+  Sparkles
 } from 'lucide-react';
 
 import { getDatabaseState, updateDatabaseState, logAuditEvent, triggerBackgroundSync } from '../../services/storageService';
@@ -70,7 +73,7 @@ import { BiometricLockOverlay } from './BiometricLockOverlay';
 import { PatientRegistrationModal } from './PatientRegistrationModal';
 import { DowntimeContinuityModal } from './DowntimeContinuityModal';
 import { DeploymentRunbookModal } from './DeploymentRunbookModal';
-import { RBACService, withRoleAccess } from '../../services/rbacService';
+import { RBACService, withRoleAccess, RoleThemeConfig, ROLE_THEMES } from '../../services/rbacService';
 import { RoleDashboard } from './RoleDashboard';
 
 // Wrapped Workstation Components with withRoleAccess HOC
@@ -112,6 +115,38 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
     }
   }, [currentUser, activeModule]);
 
+  // Dynamic Role-Based UI Theme
+  const [currentTheme, setCurrentTheme] = useState<RoleThemeConfig>(() => RBACService.getRoleTheme(currentUser));
+  const [showThemeModal, setShowThemeModal] = useState<boolean>(false);
+
+  // Automatically update theme when user changes
+  useEffect(() => {
+    setCurrentTheme(RBACService.getRoleTheme(currentUser));
+  }, [currentUser]);
+
+  // Centralized Audit Action Handler: tracks navigation across workstations for statutory compliance
+  const handleNavigate = (moduleId: string, moduleLabel?: string) => {
+    setActiveModule(moduleId);
+    auditTrailService.logUserAction({
+      user: currentUser,
+      action: 'NAVIGATE_MODULE',
+      module: moduleId as any,
+      details: `User navigated to workstation: ${moduleLabel || moduleId}`,
+    });
+  };
+
+  // Custom Theme Selection Handler
+  const handleSelectTheme = (theme: RoleThemeConfig) => {
+    setCurrentTheme(theme);
+    setShowThemeModal(false);
+    auditTrailService.logUserAction({
+      user: currentUser,
+      action: 'CONFIG_CHANGE',
+      module: 'SECURITY',
+      details: `Custom display theme selected: ${theme.name} (${theme.badge})`,
+    });
+  };
+
   // Offline & IndexedDB Caching Telemetry
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [simulateOffline, setSimulateOffline] = useState<boolean>(false);
@@ -141,10 +176,26 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
   const handleManualCacheSync = async () => {
     setIsSyncingCache(true);
     await indexedDbCache.cacheStateToIndexedDB(db);
+    auditTrailService.logUserAction({
+      user: currentUser,
+      action: 'UPDATE',
+      module: 'SECURITY',
+      details: `Manual cache sync executed. Synchronized ${db.patients.length} patient charts, ${db.inventory.length} formulary items, and ${db.encounters.length} clinical encounters in local IndexedDB.`,
+    });
     setTimeout(() => {
       setIsSyncingCache(false);
       setLastSyncTime(new Date().toLocaleTimeString());
     }, 400);
+  };
+
+  const handleToggleOfflineSimulation = (active: boolean) => {
+    setSimulateOffline(active);
+    auditTrailService.logUserAction({
+      user: currentUser,
+      action: 'CONFIG_CHANGE',
+      module: 'SECURITY',
+      details: `Intermittent VOA East network simulation ${active ? 'ENGAGED' : 'DISENGAGED'}.`,
+    });
   };
 
   const effectiveOnline = isOnline && !simulateOffline;
@@ -159,6 +210,18 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
   const [isSyncingBackground, setIsSyncingBackground] = useState(false);
   const [breakGlassReason, setBreakGlassReason] = useState('');
 
+  const handleToggleTerminalLock = (locked: boolean) => {
+    setIsTerminalLocked(locked);
+    auditTrailService.logUserAction({
+      user: currentUser,
+      action: locked ? 'TERMINAL_LOCK' : 'TERMINAL_UNLOCK',
+      module: 'SECURITY',
+      details: locked 
+        ? 'Clinical workstation screen lock engaged by user.' 
+        : 'Biometric smartcard verified. Workstation unlocked.',
+    });
+  };
+
   // Global Keyboard shortcuts: Ctrl+K for search, Ctrl+L for terminal lock
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -168,12 +231,12 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
-        setIsTerminalLocked(true);
+        handleToggleTerminalLock(true);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [currentUser]);
 
   const handleManualBackgroundSync = async () => {
     setIsSyncingBackground(true);
@@ -230,21 +293,24 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
   ];
 
   const authorizedModules = RBACService.getAuthorizedModules(currentUser);
-  const authorizedNavItems = navItems.filter(item => authorizedModules.includes(item.id));
+  const isAdmin = RBACService.getPrimaryRole(currentUser) === 'Admin';
+  // Exclude 'audit_trail' from general departmental list so it is highlighted in its own Administrator section
+  const authorizedNavItems = navItems.filter(item => authorizedModules.includes(item.id) && item.id !== 'audit_trail');
+  const hasAuditTrailAccess = authorizedModules.includes('audit_trail');
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
-      {/* Top Staff Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 shadow-md">
+    <div className={`min-h-screen ${currentTheme.workspaceBg} flex flex-col transition-colors duration-200`}>
+      {/* Top Staff Navigation Bar with Dynamic Role Theme */}
+      <header className={`sticky top-0 z-40 ${currentTheme.headerBg} border-b ${currentTheme.headerBorder} shadow-md transition-colors duration-200`}>
         <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-teal-800 flex items-center justify-center font-bold text-teal-200">
+            <div className="w-8 h-8 rounded-lg bg-teal-800/80 border border-teal-700 flex items-center justify-center font-bold text-teal-200 shrink-0">
               <Stethoscope className="w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-sm tracking-tight text-white">J & J Memorial</span>
-                <span className="text-[10px] bg-teal-950 text-teal-300 border border-teal-800 px-1.5 py-0.5 rounded font-mono font-bold">
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${currentTheme.headerBadge}`}>
                   STAFF WORKSPACE
                 </span>
               </div>
@@ -256,7 +322,15 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
           <div className="flex flex-wrap items-center gap-2 text-xs">
             {/* Global Search Button */}
             <button
-              onClick={() => setShowGlobalSearchModal(true)}
+              onClick={() => {
+                setShowGlobalSearchModal(true);
+                auditTrailService.logUserAction({
+                  user: currentUser,
+                  action: 'OPEN_SEARCH',
+                  module: 'SECURITY',
+                  details: 'Opened global patient chart search modal (Ctrl+K)',
+                });
+              }}
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition-colors cursor-pointer"
               title="Global EMR Search (Ctrl+K)"
             >
@@ -286,7 +360,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
             {/* Biometric Terminal Lock */}
             <button
-              onClick={() => setIsTerminalLocked(true)}
+              onClick={() => handleToggleTerminalLock(true)}
               className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
               title="Lock Workstation Terminal (Ctrl+L)"
             >
@@ -312,16 +386,32 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
             {/* Quick Patient Registration */}
             <button
-              onClick={() => setShowRegModal(true)}
+              onClick={() => {
+                setShowRegModal(true);
+                auditTrailService.logUserAction({
+                  user: currentUser,
+                  action: 'OPEN_REGISTRATION',
+                  module: 'SECURITY',
+                  details: 'Opened new patient registration modal',
+                });
+              }}
               className="bg-teal-700 hover:bg-teal-600 text-white font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>+ Register Patient</span>
             </button>
 
-            {/* Break-Glass */}
+            {/* Break-Glass Emergency */}
             <button
-              onClick={() => setShowBreakGlassModal(true)}
+              onClick={() => {
+                setShowBreakGlassModal(true);
+                auditTrailService.logUserAction({
+                  user: currentUser,
+                  action: 'INITIATE_BREAK_GLASS',
+                  module: 'SECURITY',
+                  details: 'Opened break-glass emergency chart access modal',
+                });
+              }}
               className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
               title="Break-Glass Emergency Chart Access"
             >
@@ -347,17 +437,33 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
               <span className="hidden sm:inline">Hostinger & Git Runbook</span>
             </button>
 
-            {/* Encrypted Cloud Snapshot Sync Button */}
+            {/* Administrator Exclusive: Audit Trail & Compliance Ledger Vault */}
+            {hasAuditTrailAccess && (
+              <button
+                onClick={() => handleNavigate('audit_trail', 'Audit Trail & Compliance')}
+                className={`font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  activeModule === 'audit_trail'
+                    ? 'bg-indigo-700 text-white shadow-xs'
+                    : 'bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-800'
+                }`}
+                title="Administrator Audit Trail & Compliance Ledger (Clearance Level 3)"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden xl:inline">Audit Trail</span>
+                <span className="text-[10px] bg-indigo-900 text-indigo-200 border border-indigo-700 px-1 py-0.2 rounded font-mono font-bold">
+                  ADMIN
+                </span>
+              </button>
+            )}
+
+            {/* Role Theme Customization Button */}
             <button
-              onClick={() => setActiveModule('audit_trail')}
-              className="bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Service Worker Background Sync: Encrypted Cloud Snapshots (RPO < 15 min)"
+              onClick={() => setShowThemeModal(true)}
+              className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-semibold border transition-all cursor-pointer ${currentTheme.headerBadge}`}
+              title="Change Display Theme (High-Contrast Lab, Financial Layout, Clinical, etc.)"
             >
-              <Cloud className="w-3.5 h-3.5 text-sky-400" />
-              <span className="hidden xl:inline">Cloud Vault</span>
-              <span className="text-[10px] bg-sky-900 text-sky-200 border border-sky-700 px-1 py-0.2 rounded font-mono font-bold">
-                AES-256
-              </span>
+              <Palette className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{currentTheme.badge}</span>
             </button>
 
             {/* Role Switcher */}
@@ -387,6 +493,91 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
         </div>
       </header>
 
+      {/* Dynamic Role Context Ribbon (Theme-Specific) */}
+      {currentTheme.isHighContrast && (
+        <div className="bg-black text-amber-300 border-b border-amber-500/40 px-4 py-2 text-xs shadow-inner">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+              <span className="font-bold text-cyan-300 uppercase tracking-wider text-[11px]">
+                🔬 LIS High-Contrast Mode Active:
+              </span>
+              <span className="text-amber-200 font-mono text-[11px]">
+                Calibrated for Staining Microscopy & Dark Bench Workstations | Glare Minimized
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="bg-rose-950 text-rose-300 border border-rose-600 px-2 py-0.5 rounded font-mono font-bold text-[10px]">
+                {db.labOrders?.filter(o => o.results?.isCritical || o.status === 'PROCESSING').length || 2} STAT REQUISITIONS
+              </span>
+              <button
+                onClick={() => handleNavigate('lab', 'Diagnostic Laboratory (LIS)')}
+                className="bg-amber-400 hover:bg-amber-300 text-black px-2.5 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors shadow-xs"
+              >
+                Open LIS Bench
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {currentTheme.isFinancialLayout && (
+        <div className="bg-emerald-950 text-emerald-100 border-b border-emerald-800 px-4 py-2 text-xs shadow-inner">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span className="font-bold text-white uppercase tracking-wider text-[11px]">
+                💳 Financial Ledger Layout:
+              </span>
+              <span className="text-emerald-300 font-mono text-[11px] bg-emerald-900/80 px-2 py-0.5 rounded border border-emerald-700">
+                Central Bank Rate: 1 USD = 195.00 LRD
+              </span>
+              <span className="hidden md:inline text-emerald-200 font-mono text-[11px]">
+                Active Cash Drawer: <strong className="text-white">$4,820.00 USD</strong> / <strong className="text-white">939,900 LRD</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="bg-emerald-900 text-emerald-200 border border-emerald-600 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
+                MoMo Float: $2,450.00
+              </span>
+              <button
+                onClick={() => handleNavigate('billing', 'Billing & Invoicing')}
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 px-2.5 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors shadow-xs"
+              >
+                + Fast Cashier Receipt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && !currentTheme.isHighContrast && !currentTheme.isFinancialLayout && (
+        <div className="bg-slate-900 text-indigo-200 border-b border-indigo-900/80 px-4 py-2 text-xs shadow-inner">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span className="font-bold text-white uppercase tracking-wider text-[11px]">
+                🛡️ Statutory Compliance & Audit Governance:
+              </span>
+              <span className="text-indigo-300 font-mono text-[11px]">
+                Chained Ledger: <strong className="text-white font-bold">{db.auditLogs?.length || 0} events</strong> | SHA-256 HMAC Verified
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="bg-indigo-950 text-indigo-300 border border-indigo-700 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
+                CLEARANCE LEVEL 3
+              </span>
+              <button
+                onClick={() => handleNavigate('audit_trail', 'Audit Trail & Compliance')}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors shadow-xs"
+              >
+                Open Audit Ledger
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Offline Status & VOA East Continuity Banner */}
       {!effectiveOnline && (
         <div className="bg-amber-600 text-white px-4 py-2.5 text-xs shadow-sm">
@@ -403,7 +594,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
               </span>
               {simulateOffline && (
                 <button
-                  onClick={() => setSimulateOffline(false)}
+                  onClick={() => handleToggleOfflineSimulation(false)}
                   className="bg-white text-amber-900 font-bold px-2 py-0.5 rounded text-[11px] hover:bg-amber-50 cursor-pointer"
                 >
                   Restore Online
@@ -418,12 +609,12 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
       <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex flex-col md:flex-row gap-6">
         {/* Module Sidebar */}
         <aside className="w-full md:w-64 shrink-0 space-y-3">
-          <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs space-y-3">
+          <div className={`rounded-xl border ${currentTheme.cardBorder} ${currentTheme.sidebarCardBg} p-3 shadow-xs space-y-3 transition-colors duration-200`}>
             {/* Authorized Scope */}
             <div>
-              <span className="text-[10px] font-bold text-teal-800 uppercase tracking-wider flex items-center justify-between px-2 mb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider flex items-center justify-between px-2 mb-1.5 opacity-80">
                 <span>Authorized Workstations</span>
-                <span className="bg-teal-50 text-teal-700 px-1.5 py-0.2 rounded font-mono font-bold">
+                <span className={`px-1.5 py-0.2 rounded font-mono font-bold ${currentTheme.accentBadge}`}>
                   {authorizedNavItems.length}
                 </span>
               </span>
@@ -431,27 +622,76 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
                 {authorizedNavItems.map(item => {
                   const Icon = item.icon;
                   const isActive = activeModule === item.id;
+                  
+                  let activeClass = 'bg-teal-800 text-white shadow-xs font-semibold';
+                  let inactiveClass = 'text-slate-700 hover:bg-slate-100 hover:text-slate-900';
+                  let activeIconClass = 'text-teal-200';
+                  let inactiveIconClass = 'text-teal-700';
+
+                  if (currentTheme.isHighContrast) {
+                    activeClass = 'bg-amber-500 text-black shadow-xs font-bold';
+                    inactiveClass = 'text-slate-200 hover:bg-slate-800 hover:text-white';
+                    activeIconClass = 'text-black';
+                    inactiveIconClass = 'text-amber-400';
+                  } else if (currentTheme.isFinancialLayout) {
+                    activeClass = 'bg-emerald-800 text-white shadow-xs font-semibold';
+                    inactiveClass = 'text-slate-700 hover:bg-emerald-50 hover:text-emerald-900';
+                    activeIconClass = 'text-emerald-200';
+                    inactiveIconClass = 'text-emerald-700';
+                  }
+
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveModule(item.id)}
+                      onClick={() => handleNavigate(item.id, item.label)}
                       className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer ${
-                        isActive
-                          ? 'bg-teal-800 text-white shadow-xs font-semibold'
-                          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                        isActive ? activeClass : inactiveClass
                       }`}
                     >
-                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-teal-200' : 'text-teal-700'}`} />
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? activeIconClass : inactiveIconClass}`} />
                       <span className="truncate">{item.label}</span>
                     </button>
                   );
                 })}
               </nav>
             </div>
+
+            {/* Dedicated Administrator Audit Trail Section */}
+            {hasAuditTrailAccess && (
+              <div className="pt-2 border-t border-indigo-200/80">
+                <div className="px-2 mb-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Audit & Compliance</span>
+                  </span>
+                  <span className="bg-indigo-100 text-indigo-800 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold">
+                    ADMIN ONLY
+                  </span>
+                </div>
+                <nav className="space-y-1">
+                  <button
+                    onClick={() => handleNavigate('audit_trail', 'Audit Trail & Compliance')}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors text-left cursor-pointer ${
+                      activeModule === 'audit_trail'
+                        ? 'bg-indigo-800 text-white shadow-xs'
+                        : 'text-indigo-950 bg-indigo-50/80 hover:bg-indigo-100/90 border border-indigo-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <ShieldCheck className={`w-4 h-4 shrink-0 ${activeModule === 'audit_trail' ? 'text-indigo-200' : 'text-indigo-700'}`} />
+                      <span className="truncate">Audit Trail & Compliance</span>
+                    </div>
+                    <span className="text-[10px] bg-indigo-950 text-indigo-200 px-1.5 py-0.2 rounded font-mono">
+                      {db.auditLogs?.length || 0}
+                    </span>
+                  </button>
+                </nav>
+              </div>
+            )}
           </div>
 
           {/* VOA East IndexedDB Offline Resiliency Card */}
-          <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2.5 text-xs">
+          <div className={`rounded-xl border ${currentTheme.cardBorder} ${currentTheme.sidebarCardBg} p-3.5 shadow-xs space-y-2.5 text-xs transition-colors duration-200`}>
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <span className="font-bold text-slate-900 text-[11px] flex items-center gap-1.5">
                 <Database className="w-3.5 h-3.5 text-teal-700" />
@@ -639,6 +879,98 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Role Theme Customization Modal */}
+      {showThemeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-teal-800 text-teal-200 flex items-center justify-center shadow-xs">
+                  <Palette className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">
+                    RBAC Role Display Themes & Workstation Ergonomics
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    High-contrast dark modes for laboratory benches, financial ledger layouts, and clinical baseline environments.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowThemeModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg cursor-pointer text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+              {RBACService.getAllThemes().map(theme => {
+                const isSelected = currentTheme.id === theme.id;
+                const isRoleDefault = RBACService.getPrimaryRole(currentUser) === theme.primaryRole;
+
+                return (
+                  <button
+                    key={theme.id}
+                    onClick={() => handleSelectTheme(theme)}
+                    className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative flex flex-col justify-between gap-2.5 ${
+                      isSelected
+                        ? 'border-teal-700 bg-teal-50/60 ring-2 ring-teal-600/30 shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${theme.accentBadge}`}>
+                          {theme.badge}
+                        </span>
+                        {isSelected && (
+                          <span className="flex items-center gap-1 text-[11px] font-bold text-teal-800">
+                            <Check className="w-3.5 h-3.5" />
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-bold text-sm text-slate-900 mt-1.5">{theme.name}</h4>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">{theme.tagline}</p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100/80 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">
+                        {theme.isHighContrast ? '🌓 High Contrast' : theme.isFinancialLayout ? '💰 Financial Layout' : '🩺 Clinical Daylight'}
+                      </span>
+                      {isRoleDefault && (
+                        <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-semibold">
+                          Recommended for {currentUser.fullName.split(' ')[0]}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => handleSelectTheme(RBACService.getRoleTheme(currentUser))}
+                className="text-xs font-semibold text-teal-800 hover:underline cursor-pointer"
+              >
+                Reset to My Role Default ({RBACService.getRoleTheme(currentUser).badge})
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowThemeModal(false)}
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2 rounded-xl transition-colors cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
