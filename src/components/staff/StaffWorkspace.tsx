@@ -47,7 +47,6 @@ import { backgroundSyncService } from '../../services/backgroundSyncService';
 import { UserAccount, UserRole } from '../../types/auth';
 import { Patient } from '../../types/patient';
 
-import { RoleSwitcher } from './RoleSwitcher';
 import { ExecutiveCommandCenter } from './ExecutiveCommandCenter';
 import { ExecutiveIntelligenceDashboard } from './ExecutiveIntelligenceDashboard';
 import { ClinicalWorkstation } from './ClinicalWorkstation';
@@ -73,6 +72,10 @@ import { BiometricLockOverlay } from './BiometricLockOverlay';
 import { PatientRegistrationModal } from './PatientRegistrationModal';
 import { DowntimeContinuityModal } from './DowntimeContinuityModal';
 import { DeploymentRunbookModal } from './DeploymentRunbookModal';
+import { oidcAuthService, OidcUserSession } from '../../services/oidcAuthService';
+import { notificationService } from '../../services/notificationService';
+import { StaffOAuthLoginModal } from './StaffOAuthLoginModal';
+import { NotificationDrawerModal } from './NotificationDrawerModal';
 import { RBACService, withRoleAccess, RoleThemeConfig, ROLE_THEMES } from '../../services/rbacService';
 import { RoleDashboard } from './RoleDashboard';
 
@@ -119,10 +122,37 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
   const [currentTheme, setCurrentTheme] = useState<RoleThemeConfig>(() => RBACService.getRoleTheme(currentUser));
   const [showThemeModal, setShowThemeModal] = useState<boolean>(false);
 
+  // OIDC Authentication & Staff Identity Modal State
+  const [showOidcLoginModal, setShowOidcLoginModal] = useState<boolean>(false);
+
+  // Centralized Notification Drawer State & Counts
+  const [showNotificationDrawer, setShowNotificationDrawer] = useState<boolean>(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(() => notificationService.getUnreadCount(currentUser));
+  const [hasStatAlert, setHasStatAlert] = useState<boolean>(() => notificationService.hasUnreadStatAlert(currentUser));
+
+  // Reactive subscription to real-time role notifications
+  useEffect(() => {
+    const updateCounts = () => {
+      setUnreadNotificationCount(notificationService.getUnreadCount(currentUser));
+      setHasStatAlert(notificationService.hasUnreadStatAlert(currentUser));
+    };
+    updateCounts();
+    const unsubscribe = notificationService.subscribe(updateCounts);
+    return () => unsubscribe();
+  }, [currentUser]);
+
   // Automatically update theme when user changes
   useEffect(() => {
     setCurrentTheme(RBACService.getRoleTheme(currentUser));
   }, [currentUser]);
+
+  const handleOidcLoginSuccess = (session: OidcUserSession) => {
+    setCurrentUser(session.user);
+    const newTheme = RBACService.getRoleTheme(session.user);
+    setCurrentTheme(newTheme);
+    const primaryWs = RBACService.getPrimaryWorkstation(session.user);
+    setActiveModule(primaryWs);
+  };
 
   // Centralized Audit Action Handler: tracks navigation across workstations for statutory compliance
   const handleNavigate = (moduleId: string, moduleLabel?: string) => {
@@ -466,20 +496,50 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
               <span className="hidden sm:inline">{currentTheme.badge}</span>
             </button>
 
-            {/* Role Switcher */}
-            <RoleSwitcher
-              currentUser={currentUser}
-              allUsers={db.users}
-              onSelectUser={u => {
-                setCurrentUser(u);
-                // Automatically log user role switch to the audit trail
-                auditTrailService.logLogin(u, 'BIOMETRIC_ROLE_SWITCH', '192.168.10.45 (Local Clinical Terminal)');
-                const primaryWs = RBACService.getPrimaryWorkstation(u);
-                if (!RBACService.hasAccess(u, activeModule, 'READ')) {
-                  setActiveModule(primaryWs);
-                }
-              }}
-            />
+            {/* Centralized Role-Specific Notification Bell */}
+            <button
+              onClick={() => setShowNotificationDrawer(true)}
+              className={`relative px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${
+                hasStatAlert
+                  ? 'bg-rose-950 text-rose-200 border-rose-600 animate-pulse ring-2 ring-rose-500/50 shadow-md'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+              }`}
+              title="Centralized Role Alerts (Lab Results, Unpaid Bills, Triage Emergencies)"
+            >
+              <Bell className={`w-3.5 h-3.5 ${hasStatAlert ? 'text-rose-400' : 'text-teal-400'}`} />
+              <span className="hidden sm:inline">Alerts</span>
+              {unreadNotificationCount > 0 && (
+                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
+                  hasStatAlert ? 'bg-rose-600 text-white animate-bounce' : 'bg-teal-600 text-white'
+                }`}>
+                  {unreadNotificationCount}
+                </span>
+              )}
+            </button>
+
+            {/* Staff OAuth2 / OIDC Verified Identity Widget */}
+            <div className="flex items-center gap-2 bg-slate-800/90 border border-slate-700 rounded-xl p-1 pl-2 text-xs shadow-xs">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-teal-800 border border-teal-600 text-teal-200 font-bold flex items-center justify-center text-[10px] shrink-0 font-mono">
+                  {currentUser.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                </div>
+                <div className="hidden sm:block text-left leading-tight">
+                  <div className="font-bold text-white max-w-[130px] truncate text-[11px]">{currentUser.fullName}</div>
+                  <div className="text-[9px] text-teal-300 font-mono flex items-center gap-1">
+                    <ShieldCheck className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                    <span>{RBACService.getPrimaryRole(currentUser)} · OIDC Verified</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowOidcLoginModal(true)}
+                className="bg-teal-700 hover:bg-teal-600 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                title="Log in with hospital-issued credentials via OAuth2 / OIDC"
+              >
+                <Key className="w-3 h-3" />
+                <span>OIDC Login</span>
+              </button>
+            </div>
 
             {/* Back to Public Hospital Website */}
             <button
@@ -974,6 +1034,22 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
           </div>
         </div>
       )}
+
+      {/* Staff OAuth2 / OIDC Login Modal */}
+      <StaffOAuthLoginModal
+        isOpen={showOidcLoginModal}
+        onClose={() => setShowOidcLoginModal(false)}
+        allStaff={db.users}
+        onLoginSuccess={handleOidcLoginSuccess}
+      />
+
+      {/* Centralized Role-Filtered Notification Drawer */}
+      <NotificationDrawerModal
+        isOpen={showNotificationDrawer}
+        onClose={() => setShowNotificationDrawer(false)}
+        currentUser={currentUser}
+        onNavigateModule={(modId, label) => handleNavigate(modId, label)}
+      />
     </div>
   );
 };
