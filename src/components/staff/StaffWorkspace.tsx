@@ -78,6 +78,7 @@ import { StaffOAuthLoginModal } from './StaffOAuthLoginModal';
 import { NotificationDrawerModal } from './NotificationDrawerModal';
 import { RBACService, withRoleAccess, RoleThemeConfig, ROLE_THEMES } from '../../services/rbacService';
 import { RoleDashboard } from './RoleDashboard';
+import { useRBAC } from '../../hooks/useRBAC';
 
 // Wrapped Workstation Components with withRoleAccess HOC
 const SecureClinicalWorkstation = withRoleAccess(ClinicalWorkstation, 'opd', 'READ', 'Outpatient (OPD) & EMR');
@@ -101,25 +102,33 @@ const SecureMessagingWorkstation = withRoleAccess(StaffMessagingWorkstation, 'me
 const SecureExecutiveBIDashboard = withRoleAccess(ExecutiveIntelligenceDashboard, 'executive_bi', 'READ', 'Executive BI & Analytics');
 const SecureCommandCenter = withRoleAccess(ExecutiveCommandCenter, 'command_center', 'READ', 'Facility Command Center');
 
-interface StaffWorkspaceProps {
+export interface StaffWorkspaceProps {
   onBackToPublicSite: () => void;
+  currentUser?: UserAccount;
+  onUserChange?: (user: UserAccount) => void;
 }
 
-export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSite }) => {
+export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
+  onBackToPublicSite,
+  currentUser: propCurrentUser,
+  onUserChange,
+}) => {
   const db = getDatabaseState();
-  // Default to Dr. J. Saydee Kollie (Medical Director) or Dr. Evelyn Sirleaf-Gbotoe
-  const [currentUser, setCurrentUser] = useState<UserAccount>(db.users[1]); // Dr. Evelyn
-  const [activeModule, setActiveModule] = useState<string>('opd');
+  // Persistent RBAC & Session management hook
+  const rbac = useRBAC({ currentUser: propCurrentUser });
+  // Prioritize the currentUser prop if provided, else use persistent session user from useRBAC
+  const currentUser = propCurrentUser || rbac.currentUser;
+  const [activeModule, setActiveModule] = useState<string>(() => rbac.primaryWorkstation);
 
   // RBAC Segregation: Automatically redirect to primary workstation if activeModule is unauthorized for current user
   useEffect(() => {
-    if (!RBACService.hasAccess(currentUser, activeModule, 'READ')) {
-      setActiveModule(RBACService.getPrimaryWorkstation(currentUser));
+    if (!rbac.hasAccess(activeModule, 'READ')) {
+      setActiveModule(rbac.primaryWorkstation);
     }
-  }, [currentUser, activeModule]);
+  }, [currentUser, activeModule, rbac]);
 
   // Dynamic Role-Based UI Theme
-  const [currentTheme, setCurrentTheme] = useState<RoleThemeConfig>(() => RBACService.getRoleTheme(currentUser));
+  const [currentTheme, setCurrentTheme] = useState<RoleThemeConfig>(() => rbac.roleTheme);
   const [showThemeModal, setShowThemeModal] = useState<boolean>(false);
 
   // OIDC Authentication & Staff Identity Modal State
@@ -143,15 +152,29 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
 
   // Automatically update theme when user changes
   useEffect(() => {
-    setCurrentTheme(RBACService.getRoleTheme(currentUser));
-  }, [currentUser]);
+    setCurrentTheme(rbac.roleTheme);
+  }, [rbac.roleTheme]);
 
   const handleOidcLoginSuccess = (session: OidcUserSession) => {
-    setCurrentUser(session.user);
+    rbac.switchUser(session.user);
+    onUserChange?.(session.user);
     const newTheme = RBACService.getRoleTheme(session.user);
     setCurrentTheme(newTheme);
     const primaryWs = RBACService.getPrimaryWorkstation(session.user);
     setActiveModule(primaryWs);
+  };
+
+  // Instant RBAC Staff Profile Switcher (Synchronous Role, Theme, and Workstation Transition)
+  const handleUserSelect = (userId: string) => {
+    const selected = db.users.find(u => u.id === userId);
+    if (!selected) return;
+    rbac.switchUser(selected);
+    onUserChange?.(selected);
+    const newTheme = RBACService.getRoleTheme(selected);
+    setCurrentTheme(newTheme);
+    const primaryWs = RBACService.getPrimaryWorkstation(selected);
+    setActiveModule(primaryWs);
+    auditTrailService.logLogin(selected, 'QUICK_ROLE_SWITCH', '192.168.10.45 (Local Clinical Terminal)');
   };
 
   // Centralized Audit Action Handler: tracks navigation across workstations for statutory compliance
@@ -276,7 +299,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
     { id: 'messages', label: 'Internal Staff Comms', icon: MessageSquare },
     { id: 'executive_bi', label: 'Executive Intelligence (BI)', icon: TrendingUp },
     { id: 'command_center', label: 'Command Center & HMIS', icon: Activity },
-    { id: 'opd', label: 'Outpatient (OPD) & EMR', icon: Stethoscope },
+    { id: 'opd', label: 'Clinical Charts (OPD EMR)', icon: Stethoscope },
     { id: 'triage', label: 'Triage & Nursing Vitals', icon: HeartPulse },
     { id: 'inpatient', label: 'Inpatient Wards & Beds (ADT)', icon: Bed },
     { id: 'lab', label: 'Diagnostic Laboratory (LIS)', icon: Microscope },
@@ -295,11 +318,11 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
     { id: 'quality', label: 'Quality & Safety Incidents', icon: AlertCircle },
   ];
 
-  const authorizedModules = RBACService.getAuthorizedModules(currentUser);
-  const isAdmin = RBACService.getPrimaryRole(currentUser) === 'Admin';
+  const authorizedModules = rbac.authorizedModules;
+  const isAdmin = rbac.isAdmin;
   // Exclude 'audit_trail' from general departmental list so it is highlighted in its own Administrator section
   const authorizedNavItems = navItems.filter(item => authorizedModules.includes(item.id) && item.id !== 'audit_trail');
-  const hasAuditTrailAccess = authorizedModules.includes('audit_trail');
+  const hasAuditTrailAccess = rbac.hasAccess('audit_trail', 'READ');
 
   return (
     <div className={`min-h-screen ${currentTheme.workspaceBg} flex flex-col transition-colors duration-200`}>
@@ -490,27 +513,42 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({ onBackToPublicSi
               )}
             </button>
 
-            {/* Staff OAuth2 / OIDC Verified Identity Widget */}
-            <div className="flex items-center gap-2 bg-slate-800/90 border border-slate-700 rounded-xl p-1 pl-2 text-xs shadow-xs">
+            {/* Staff RBAC Role Switcher & OIDC Verified Identity Widget */}
+            <div className="flex items-center gap-1.5 bg-slate-800/95 border border-slate-700 rounded-xl p-1 px-2 text-xs shadow-xs">
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 rounded-lg bg-teal-800 border border-teal-600 text-teal-200 font-bold flex items-center justify-center text-[10px] shrink-0 font-mono">
                   {currentUser.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                 </div>
-                <div className="hidden sm:block text-left leading-tight">
-                  <div className="font-bold text-white max-w-[130px] truncate text-[11px]">{currentUser.fullName}</div>
-                  <div className="text-[9px] text-teal-300 font-mono flex items-center gap-1">
-                    <ShieldCheck className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
-                    <span>{RBACService.getPrimaryRole(currentUser)} · OIDC Verified</span>
+                <div className="flex flex-col text-left">
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={currentUser.id}
+                      onChange={(e) => handleUserSelect(e.target.value)}
+                      className="bg-slate-900 text-white font-bold text-[11px] rounded px-2 py-0.5 border border-slate-700 hover:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-400 cursor-pointer max-w-[190px] md:max-w-[230px] truncate"
+                      title="Select staff user to test role-scoped permissions, workstations, and analytical dashboards"
+                    >
+                      {db.users.map(u => {
+                        const role = RBACService.getPrimaryRole(u);
+                        return (
+                          <option key={u.id} value={u.id} className="bg-slate-900 text-white">
+                            {u.fullName} — [{role}]
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${currentTheme.headerBadge}`}>
+                      {RBACService.getPrimaryRole(currentUser)}
+                    </span>
                   </div>
                 </div>
               </div>
               <button
                 onClick={() => setShowOidcLoginModal(true)}
-                className="bg-teal-700 hover:bg-teal-600 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                className="bg-teal-700 hover:bg-teal-600 text-white font-bold px-2 py-1 rounded-lg text-[10px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs shrink-0"
                 title="Log in with hospital-issued credentials via OAuth2 / OIDC"
               >
                 <Key className="w-3 h-3" />
-                <span>OIDC Login</span>
+                <span className="hidden lg:inline">OIDC</span>
               </button>
             </div>
 

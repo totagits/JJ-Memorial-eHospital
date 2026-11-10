@@ -13,6 +13,7 @@ import { AppointmentBookingModal } from './components/public/AppointmentBookingM
 import { StaffWorkspace } from './components/staff/StaffWorkspace';
 import { subscribeDatabase, getDatabaseState } from './services/storageService';
 import { I18nProvider } from './services/i18nService';
+import { useRBAC } from './hooks/useRBAC';
 
 export default function App() {
   const [viewMode, setViewMode] = useState<'public' | 'staff'>('public');
@@ -20,6 +21,7 @@ export default function App() {
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [selectedClinicianId, setSelectedClinicianId] = useState<string | undefined>(undefined);
   const [selectedDepartment, setSelectedDepartment] = useState<string | undefined>(undefined);
+  const { currentUser, switchUser } = useRBAC();
 
   const handleOpenAppointmentModal = (clinicianId?: string, department?: string) => {
     setSelectedClinicianId(clinicianId);
@@ -67,7 +69,11 @@ export default function App() {
     <I18nProvider>
       <div className="min-h-screen flex flex-col font-sans text-slate-900 bg-slate-50 selection:bg-teal-500/20 selection:text-teal-900">
         {viewMode === 'staff' ? (
-          <StaffWorkspace onBackToPublicSite={() => setViewMode('public')} />
+          <StaffWorkspace
+            currentUser={currentUser}
+            onUserChange={switchUser}
+            onBackToPublicSite={() => setViewMode('public')}
+          />
         ) : (
         <>
           <PublicHeader

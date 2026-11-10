@@ -101,7 +101,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Billing: 'NONE',
   },
 
-  // 3. Patient Billing & Invoicing (Strictly Segregated)
+  // 3. Patient Billing & Invoicing (Strictly Segregated to Finance / Cashier)
   billing: {
     Billing: 'ADMIN',
     Admin: 'ADMIN',
@@ -110,7 +110,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Clinician: 'NONE', // Clinicians have ZERO access to Billing invoices
     Nurse: 'NONE',     // Nurses have ZERO access to Billing invoices
     Radiology: 'NONE',
-    Pharmacy: 'READ',
+    Pharmacy: 'NONE',  // Pharmacy staff have ZERO access to Billing invoices
   },
 
   // 4. General Ledger (GL) & Financial Accounts
@@ -149,14 +149,14 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Radiology: 'NONE',
   },
 
-  // 7. Outpatient (OPD) & Clinical EMR Charts
+  // 7. Outpatient (OPD) & Clinical EMR Charts (Doctors & Clinicians)
   opd: {
     Clinician: 'ADMIN',
     Nurse: 'WRITE',
     Admin: 'ADMIN',
     Management: 'READ',
-    Billing: 'READ',
-    Pharmacy: 'READ',
+    Billing: 'NONE',   // Billing / Finance has ZERO access to Clinical Charts
+    Pharmacy: 'NONE',  // Pharmacy has ZERO access to Clinical Consults
     LIS: 'NONE',       // Laboratory Scientist has ZERO access to OPD clinical encounters
     Radiology: 'NONE',
   },
@@ -167,8 +167,8 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Clinician: 'ADMIN',
     Admin: 'ADMIN',
     Management: 'READ',
-    Billing: 'READ',
-    Pharmacy: 'READ',
+    Billing: 'NONE',   // Billing / Finance has ZERO access to Triage Vitals
+    Pharmacy: 'NONE',
     LIS: 'NONE',
     Radiology: 'NONE',
   },
@@ -179,7 +179,7 @@ export const MODULE_ACCESS_MATRIX: Record<string, Record<PrimaryRole, AccessLeve
     Clinician: 'WRITE',
     Admin: 'ADMIN',
     Management: 'READ',
-    Billing: 'READ',
+    Billing: 'NONE',   // Billing / Finance has ZERO access to Inpatient Wards & Charts
     Pharmacy: 'READ',
     LIS: 'NONE',
     Radiology: 'NONE',
