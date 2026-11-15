@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -129,7 +129,15 @@ export function registryRoutes(database, origin) {
       next();
     }).catch(next);
   });
-  router.get('/session', (_req, res) => res.json(res.locals.staff));
+  router.get('/session', route(async (_req, res) => {
+    const staff = res.locals.staff;
+    const { rows } = await database.query(
+      `SELECT d.code, d.name, m.role FROM staff_department_memberships m
+       JOIN hospital_departments d ON d.code=m.department_code WHERE m.username=$1 ORDER BY d.name, m.role`,
+      [staff.username],
+    );
+    res.json({ ...staff, departments: rows });
+  }));
   router.post('/logout', route(async (req, res) => {
     await database.query('DELETE FROM registry_sessions WHERE token_hash=$1', [sessionHash(req)]);
     res.clearCookie(cookie, cookieOptions).sendStatus(204);
@@ -278,9 +286,14 @@ export function registryRoutes(database, origin) {
   router.get('/triage', route(async (_req, res) => {
     const { rows } = await database.query(
       `SELECT v.id, v.patient_mrn AS "patientMrn", p.first_name AS "firstName",
-              p.last_name AS "lastName", v.checked_in_at AS "checkedInAt"
+              p.last_name AS "lastName", d.name AS "department", v.checked_in_at AS "checkedInAt"
        FROM scheduled_visits v JOIN registry_patients p ON p.mrn=v.patient_mrn
-       WHERE v.status='waiting_for_triage' ORDER BY v.checked_in_at, v.id LIMIT 100`,
+       JOIN appointment_requests req ON req.id=v.request_id
+       JOIN appointment_department_map dm ON dm.request_department=req.department
+       JOIN hospital_departments d ON d.code=dm.department_code
+       JOIN staff_department_memberships m ON m.department_code=dm.department_code
+         AND m.username=$1 AND m.role='triage'
+       WHERE v.status='waiting_for_triage' ORDER BY v.checked_in_at, v.id LIMIT 100`, [res.locals.staff.username],
     );
     res.json(rows);
   }));
@@ -289,7 +302,13 @@ export function registryRoutes(database, origin) {
     if (!uuid.test(req.params.id) || !maxText(notes, 2000) || !notes) return res.sendStatus(400);
     const result = await transaction(database, async client => {
       const { rows: [visit] } = await client.query(
-        'SELECT status FROM scheduled_visits WHERE id=$1 FOR UPDATE', [req.params.id],
+        `SELECT v.status FROM scheduled_visits v
+         JOIN appointment_requests req ON req.id=v.request_id
+         JOIN appointment_department_map dm ON dm.request_department=req.department
+         JOIN staff_department_memberships m ON m.department_code=dm.department_code
+           AND m.username=$2 AND m.role='triage'
+         WHERE v.id=$1 FOR UPDATE OF v, m`,
+        [req.params.id, res.locals.staff.username],
       );
       if (!visit) return 404;
       if (visit.status !== 'waiting_for_triage') return 409;
@@ -304,11 +323,16 @@ export function registryRoutes(database, origin) {
   router.get('/encounters', route(async (_req, res) => {
     const { rows } = await database.query(
       `SELECT v.id, v.patient_mrn AS "patientMrn", p.first_name AS "firstName",
-              p.last_name AS "lastName", v.checked_in_at AS "checkedInAt", a.notes AS "triageNotes"
+              p.last_name AS "lastName", d.name AS "department", v.checked_in_at AS "checkedInAt", a.notes AS "triageNotes"
        FROM scheduled_visits v JOIN registry_patients p ON p.mrn=v.patient_mrn
        JOIN triage_assessments a ON a.visit_id=v.id
        JOIN clinician_slots s ON s.id=v.slot_id
        JOIN registry_staff staff ON staff.clinician_id=s.clinician_id
+       JOIN appointment_requests req ON req.id=v.request_id
+       JOIN appointment_department_map dm ON dm.request_department=req.department
+       JOIN hospital_departments d ON d.code=dm.department_code
+       JOIN staff_department_memberships m ON m.department_code=dm.department_code
+         AND m.username=$1 AND m.role='clinician'
        WHERE staff.username=$1 AND staff.role='clinician' AND v.status='triaged'
        ORDER BY a.recorded_at, v.id LIMIT 100`, [res.locals.staff.username],
     );
@@ -323,7 +347,11 @@ export function registryRoutes(database, origin) {
         `SELECT v.status FROM scheduled_visits v
          JOIN clinician_slots s ON s.id=v.slot_id
          JOIN registry_staff staff ON staff.clinician_id=s.clinician_id
-         WHERE v.id=$1 AND staff.username=$2 AND staff.role='clinician' FOR UPDATE OF v`,
+         JOIN appointment_requests req ON req.id=v.request_id
+         JOIN appointment_department_map dm ON dm.request_department=req.department
+         JOIN staff_department_memberships m ON m.department_code=dm.department_code
+           AND m.username=staff.username AND m.role='clinician'
+         WHERE v.id=$1 AND staff.username=$2 AND staff.role='clinician' FOR UPDATE OF v, m, staff`,
         [req.params.id, username],
       );
       if (!visit) return 404;

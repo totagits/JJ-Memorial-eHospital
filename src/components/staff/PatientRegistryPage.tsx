@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 
-type Staff = { username: string; role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' };
+type Staff = {
+  username: string;
+  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician';
+  departments?: { code: string; name: string; role: string }[];
+};
 type Patient = { mrn: string; firstName: string; lastName: string; birthDate: string };
 
 type AppointmentRequest = {
@@ -172,7 +176,7 @@ function AppointmentQueue() {
   );
 }
 
-type TriageVisit = { id: string; patientMrn: string; firstName: string; lastName: string; checkedInAt: string; triageNotes?: string };
+type TriageVisit = { id: string; patientMrn: string; firstName: string; lastName: string; checkedInAt: string; department: string; triageNotes?: string };
 
 function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
   const endpoint = clinician ? '/encounters' : '/triage';
@@ -207,6 +211,7 @@ function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
           void update({ id: visit.id, notes: String(data.get('notes')).trim() });
         }}>
           <h3 className="font-semibold">{visit.firstName} {visit.lastName}</h3>
+          <p className="text-sm">{visit.department}</p>
           <p className="break-all text-sm">MRN {visit.patientMrn}</p>
           <p className="text-sm">Checked in {scheduleDate.format(new Date(visit.checkedInAt))} (Monrovia)</p>
           {clinician && <p className="whitespace-pre-wrap break-words"><strong>Triage notes</strong>{' '}{visit.triageNotes}</p>}
@@ -265,7 +270,12 @@ export function PatientRegistryPage() {
         <h1 className="mt-5 text-3xl font-bold">Staging patient registry</h1>
         <p className="mt-2 text-slate-700">Use synthetic patient data only.</p>
         {staff && <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p>Signed in as <strong>{staff.username}</strong> ({staff.role})</p>
+          <div>
+            <p>Signed in as <strong>{staff.username}</strong> ({staff.role})</p>
+            {staff.departments?.some(department => department.role === staff.role)
+              ? <p className="text-sm">{staff.departments.filter(department => department.role === staff.role).map(department => department.name).join(', ')}</p>
+              : (staff.role === 'clinician' || staff.role === 'triage') && <p className="text-sm">No department assigned for this role.</p>}
+          </div>
           <button disabled={busy} className="min-h-11 rounded-md border border-slate-400 px-4" onClick={() => void perform(async () => {
             await request('/logout', {});
             setStaff(null);
@@ -275,10 +285,11 @@ export function PatientRegistryPage() {
         <p role="status" className="my-4 text-slate-800">{status}</p>
         {!staff ? (
           <form className="max-w-md space-y-4 rounded-lg border border-slate-200 bg-white p-5" onSubmit={submit(async data => {
-            setStaff(await request<Staff>('/session', {
+            await request<Staff>('/session', {
               username: String(data.get('username')).trim().toLowerCase(),
               accessKey: String(data.get('accessKey')).trim(),
-            }));
+            });
+            setStaff(await request<Staff>('/session'));
           })}>
             <h2 className="text-xl font-semibold">Staff sign-in</h2>
             <label className="block">Username<input className={input} name="username" autoComplete="username" required /></label>
