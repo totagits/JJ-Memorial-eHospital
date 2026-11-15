@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-type Staff = { username: string; role: 'registrar' | 'viewer' | 'restricted' | 'triage' };
+type Staff = { username: string; role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' };
 type Patient = { mrn: string; firstName: string; lastName: string; birthDate: string };
 
 type AppointmentRequest = {
@@ -11,7 +11,7 @@ type AppointmentRequest = {
 
 type ScheduleSlot = {
   id: string; clinicianId: string; startsAt: string; visitId: string | null;
-  status: 'scheduled' | 'waiting_for_triage' | 'triaged' | null;
+  status: 'scheduled' | 'waiting_for_triage' | 'triaged' | 'completed' | null;
   patientMrn: string | null; firstName: string | null; lastName: string | null;
 };
 
@@ -105,7 +105,7 @@ function AppointmentQueue() {
           <article key={slot.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 p-3">
             <div>
               <p className="font-medium">{describeSlot(slot)}</p>
-              <p>{slot.status === 'waiting_for_triage' ? 'Waiting for triage' : slot.status === 'triaged' ? 'Triage recorded' : slot.visitId ? 'Scheduled' : 'Open'}
+              <p>{slot.status === 'waiting_for_triage' ? 'Waiting for triage' : slot.status === 'completed' ? 'Visit completed' : slot.status === 'triaged' ? 'Triage recorded' : slot.visitId ? 'Scheduled' : 'Open'}
                 {slot.firstName && ' | ' + slot.firstName + ' ' + slot.lastName}
               </p>
               {slot.patientMrn && <p className="break-all text-xs text-slate-600">MRN {slot.patientMrn}</p>}
@@ -170,9 +170,10 @@ function AppointmentQueue() {
   );
 }
 
-type TriageVisit = { id: string; patientMrn: string; firstName: string; lastName: string; checkedInAt: string };
+type TriageVisit = { id: string; patientMrn: string; firstName: string; lastName: string; checkedInAt: string; triageNotes?: string };
 
-function TriageWorkspace() {
+function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
+  const endpoint = clinician ? '/encounters' : '/triage';
   const [queue, setQueue] = useState<TriageVisit[] | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -181,8 +182,8 @@ function TriageWorkspace() {
     setBusy(true);
     setMessage('');
     try {
-      if (assessment) await request('/triage/' + assessment.id + '/assessment', { notes: assessment.notes });
-      setQueue(await request<TriageVisit[]>('/triage'));
+      if (assessment) await request(endpoint + '/' + assessment.id + '/assessment', { notes: assessment.notes });
+      setQueue(await request<TriageVisit[]>(endpoint));
       if (assessment) setMessage('Assessment recorded.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Triage queue unavailable.');
@@ -193,10 +194,10 @@ function TriageWorkspace() {
 
   return (
     <section className="space-y-4">
-      <h2 className="text-xl font-semibold">Triage workspace</h2>
+      <h2 className="text-xl font-semibold">{clinician ? 'Clinician workspace' : 'Triage workspace'}</h2>
       <button type="button" disabled={busy} className={scheduleButton} onClick={() => void update()}>Refresh waiting queue</button>
       <p role="status">{message}</p>
-      {queue?.length === 0 && <p>No patients waiting for triage.</p>}
+      {queue?.length === 0 && <p>{clinician ? 'No assigned visits ready for consultation.' : 'No patients waiting for triage.'}</p>}
       {queue?.map(visit => (
         <form key={visit.id} className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={event => {
           event.preventDefault();
@@ -206,10 +207,11 @@ function TriageWorkspace() {
           <h3 className="font-semibold">{visit.firstName} {visit.lastName}</h3>
           <p className="break-all text-sm">MRN {visit.patientMrn}</p>
           <p className="text-sm">Checked in {scheduleDate.format(new Date(visit.checkedInAt))} (Monrovia)</p>
-          <label className="block">Assessment notes
+          {clinician && <p className="whitespace-pre-wrap break-words"><strong>Triage notes</strong>{' '}{visit.triageNotes}</p>}
+          <label className="block">{clinician ? 'Encounter notes' : 'Assessment notes'}
             <textarea name="notes" required maxLength={2000} rows={4} className="mt-1 block w-full rounded-md border border-slate-400 p-2" />
           </label>
-          <button disabled={busy} className={scheduleButton}>Record assessment</button>
+          <button disabled={busy} className={scheduleButton}>{clinician ? 'Complete encounter' : 'Record assessment'}</button>
         </form>
       ))}
     </section>
@@ -281,7 +283,7 @@ export function PatientRegistryPage() {
             <label className="block">Access key<input className={input} name="accessKey" type="password" autoComplete="current-password" required /></label>
             <button className={button} disabled={busy}>Sign in</button>
           </form>
-        ) : staff.role === 'triage' ? <TriageWorkspace /> : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (
+        ) : staff.role === 'triage' ? <AssessmentWorkspace /> : staff.role === 'clinician' ? <AssessmentWorkspace clinician /> : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (
           <div className="grid gap-5 sm:grid-cols-2">
             {staff.role === 'registrar' && (
               <form className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={submit(async data => {
