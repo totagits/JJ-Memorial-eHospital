@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -160,7 +160,8 @@ export function registryRoutes(database, origin) {
     const { rows } = await database.query(
       `SELECT id, first_name AS "firstName", last_name AS "lastName", phone, email, department, clinician_id AS "clinicianId",
         requested_date::text AS date, requested_time AS "timeSlot", reason, patient_mrn AS "patientMrn", status
-       FROM appointment_requests WHERE status IN ('pending','contacted')
+       FROM appointment_requests a WHERE status IN ('pending','contacted')
+       AND NOT EXISTS (SELECT 1 FROM scheduled_visits v WHERE v.request_id=a.id)
        ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END, created_at DESC, id LIMIT 50`,
     );
     res.json(rows);
@@ -177,6 +178,7 @@ export function registryRoutes(database, origin) {
         'SELECT status, patient_mrn FROM appointment_requests WHERE id=$1 FOR UPDATE', [id],
       );
       if (!current) return 404;
+      if ((await client.query('SELECT 1 FROM scheduled_visits WHERE request_id=$1', [id])).rowCount) return 409;
       const mrn = patientMrn || current.patient_mrn;
       if (current.status === status && current.patient_mrn === mrn) return 204;
       if (current.status === 'closed') return 409;
@@ -188,6 +190,75 @@ export function registryRoutes(database, origin) {
       return 204;
     });
     res.sendStatus(result);
+  }));
+  router.use('/schedule', (_req, res, next) => {
+    if (res.locals.staff.role !== 'registrar') return res.sendStatus(403);
+    next();
+  });
+
+  router.get('/schedule', route(async (_req, res) => {
+    const { rows } = await database.query(
+      `SELECT s.id, s.clinician_id AS "clinicianId", s.starts_at AS "startsAt",
+        v.id AS "visitId", v.status, v.patient_mrn AS "patientMrn",
+        p.first_name AS "firstName", p.last_name AS "lastName"
+       FROM clinician_slots s LEFT JOIN scheduled_visits v ON s.id=v.slot_id
+       LEFT JOIN registry_patients p ON p.mrn=v.patient_mrn
+       WHERE (v.id IS NULL AND s.starts_at>now()) OR v.id IS NOT NULL
+       ORDER BY CASE WHEN v.status='waiting_for_triage' THEN 0 ELSE 1 END, s.starts_at, s.id LIMIT 100`,
+    );
+    res.json(rows);
+  }));
+
+  router.post('/schedule/slots', route(async (req, res) => {
+    const { clinicianId, date, timeSlot } = req.body ?? {};
+    if (!clinicians.has(clinicianId) || !times.has(timeSlot) ||
+        typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.sendStatus(400);
+    const [clock, period] = timeSlot.split(' ');
+    const [hour, minute] = clock.split(':').map(Number);
+    const utcHour = hour % 12 + (period === 'PM' ? 12 : 0);
+    const start = new Date(date + 'T' + String(utcHour).padStart(2,'0') + ':' + String(minute).padStart(2,'0') + ':00Z');
+    if (!Number.isFinite(start.getTime()) || start.toISOString().slice(0, 10) !== date ||
+        start.getTime() <= Date.now() || start.getTime() > Date.now() + 365 * 86400000) return res.sendStatus(400);
+    const result = await database.query(
+      'INSERT INTO clinician_slots (id,clinician_id,starts_at) VALUES($1,$2,$3) ON CONFLICT (clinician_id,starts_at) DO NOTHING',
+      [randomUUID(), clinicianId, start],
+    );
+    res.sendStatus(result.rowCount ? 201 : 409);
+  }));
+
+  router.post('/schedule/visits', route(async (req, res) => {
+    const { requestId, slotId } = req.body ?? {};
+    if (typeof requestId !== 'string' || !uuid.test(requestId) ||
+        typeof slotId !== 'string' || !uuid.test(slotId)) return res.sendStatus(400);
+    const username = res.locals.staff.username;
+    const result = await transaction(database, async client => {
+      const { rows: [request] } = await client.query(
+        'SELECT status, patient_mrn FROM appointment_requests WHERE id=$1 FOR UPDATE', [requestId],
+      );
+      if (!request) return 404;
+      const { rows: [existing] } = await client.query('SELECT slot_id FROM scheduled_visits WHERE request_id=$1', [requestId]);
+      if (existing) return existing.slot_id === slotId ? 204 : 409;
+      if (request.status !== 'contacted' || !request.patient_mrn) return 409;
+      const slot = await client.query('SELECT 1 FROM clinician_slots WHERE id=$1 AND starts_at>now() FOR UPDATE', [slotId]);
+      if (!slot.rowCount) return 409;
+      const inserted = await client.query(
+        'INSERT INTO scheduled_visits (id,request_id,slot_id,patient_mrn,scheduled_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
+        [randomUUID(), requestId, slotId, request.patient_mrn, username],
+      );
+      return inserted.rowCount ? 201 : 409;
+    });
+    res.sendStatus(result);
+  }));
+
+  router.post('/schedule/visits/:id/check-in', route(async (req, res) => {
+    if (!uuid.test(req.params.id)) return res.sendStatus(400);
+    const result = await database.query(
+      `UPDATE scheduled_visits SET status='waiting_for_triage',checked_in_by=$2,checked_in_at=now()
+       WHERE id=$1 AND status='scheduled'`, [req.params.id, res.locals.staff.username],
+    );
+    if (result.rowCount) return res.sendStatus(204);
+    const existing = await database.query('SELECT 1 FROM scheduled_visits WHERE id=$1', [req.params.id]);
+    res.sendStatus(existing.rowCount ? 204 : 404);
   }));
   router.use((_req, res) => res.sendStatus(404));
   router.use((error, _req, res, _next) => {
