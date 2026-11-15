@@ -10,12 +10,17 @@ import { PatientPortalView } from './components/public/PatientPortalView';
 import { HealthResourcesPage } from './components/public/HealthResourcesPage';
 import { ContactPage } from './components/public/ContactPage';
 import { AppointmentBookingModal } from './components/public/AppointmentBookingModal';
+import { PatientRegistryPage } from './components/staff/PatientRegistryPage';
 import { StaffWorkspace } from './components/staff/StaffWorkspace';
 import { subscribeDatabase, getDatabaseState } from './services/storageService';
 import { I18nProvider } from './services/i18nService';
 import { useRBAC } from './hooks/useRBAC';
 
 export default function App() {
+  return /^\/staff\/registry\/?$/.test(window.location.pathname) ? <PatientRegistryPage /> : <HospitalApp />;
+}
+
+function HospitalApp() {
   const [viewMode, setViewMode] = useState<'public' | 'staff'>('public');
   const [publicTab, setPublicTab] = useState<string>('home');
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);

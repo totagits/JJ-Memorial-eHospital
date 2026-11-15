@@ -2,6 +2,7 @@ import path from 'node:path';
 import compression from 'compression';
 import express from 'express';
 import pg from 'pg';
+import { migrateRegistry, registryRoutes } from './registry.mjs';
 
 const app = express();
 const dist = path.join(import.meta.dirname, 'dist');
@@ -36,6 +37,12 @@ app.get('/health/ready', async (_request, response) => {
     response.status(503).json({ status: 'unavailable' });
   }
 });
+
+const registryOrigin = process.env.COOLIFY_FQDN === 'jjmemorial-staging.totag.network'
+  || process.env.COOLIFY_URL === 'https://jjmemorial-staging.totag.network'
+  ? 'https://jjmemorial-staging.totag.network' : process.env.REGISTRY_ORIGIN;
+if (registryOrigin && database) await migrateRegistry(database);
+app.use('/api/registry', registryRoutes(database, registryOrigin));
 
 app.use('/assets', express.static(path.join(dist, 'assets'), {
   immutable: true,
