@@ -566,15 +566,15 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
 
       {/* Dynamic Role Context Ribbon (Theme-Specific) */}
       {currentTheme.isHighContrast && (
-        <div className="bg-black text-amber-300 border-b border-amber-500/40 px-4 py-2 text-xs shadow-inner">
+        <div className="bg-black text-amber-300 border-b-2 border-amber-400/70 px-4 py-2 text-xs shadow-inner">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+              <Microscope className="w-4 h-4 text-cyan-300 shrink-0" />
               <span className="font-bold text-cyan-300 uppercase tracking-wider text-[11px]">
-                🔬 LIS High-Contrast Mode Active:
+                {currentTheme.badge} Mode Active:
               </span>
               <span className="text-amber-200 font-mono text-[11px]">
-                Calibrated for Staining Microscopy & Dark Bench Workstations | Glare Minimized
+                {currentTheme.ribbonText}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -593,12 +593,12 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
       )}
 
       {currentTheme.isFinancialLayout && (
-        <div className="bg-emerald-950 text-emerald-100 border-b border-emerald-800 px-4 py-2 text-xs shadow-inner">
+        <div className="bg-emerald-950 text-emerald-100 border-b border-emerald-700 px-4 py-1.5 text-xs shadow-inner">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <DollarSign className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="font-bold text-white uppercase tracking-wider text-[11px]">
-                💳 Financial Ledger Layout:
+                Financial Ledger Layout:
               </span>
               <span className="text-emerald-300 font-mono text-[11px] bg-emerald-900/80 px-2 py-0.5 rounded border border-emerald-700">
                 Central Bank Rate: 1 USD = 195.00 LRD
@@ -650,23 +650,23 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
         </div>
       )}
 
-      {/* Dynamic Role Ribbon for Clinical, Nursing, and Pharmacy modes */}
+      {/* Dynamic Role Ribbon for Clinical, Nursing, and Pharmacy (Clinical Amber) modes */}
       {!currentTheme.isHighContrast && !currentTheme.isFinancialLayout && !RBACService.isAdministratorOrManagement(currentUser) && (
-        <div className="bg-slate-900/90 text-slate-300 border-b border-slate-800 px-4 py-1.5 text-xs shadow-inner">
+        <div className={`${currentTheme.headerBg} px-4 py-1.5 text-xs shadow-inner`}>
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${currentTheme.accentBadge}`}>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${currentTheme.headerBadge}`}>
                 {currentTheme.badge}
               </span>
-              <span className="text-[11px] text-slate-200 font-medium">
+              <span className="text-[11px] opacity-90 font-medium">
                 {currentTheme.ribbonText}
               </span>
             </div>
             <div className="flex items-center gap-2 text-[10px]">
-              <span className="text-slate-400 font-mono">Density: <strong>{currentTheme.tableDensity}</strong></span>
+              <span className="opacity-75 font-mono">Density: <strong>{currentTheme.tableDensity}</strong></span>
               <button
                 onClick={() => setShowThemeModal(true)}
-                className="text-teal-400 hover:underline cursor-pointer font-semibold"
+                className="underline cursor-pointer font-semibold opacity-95 hover:opacity-100"
               >
                 Customize Theme
               </button>
@@ -680,7 +680,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
         <div className="bg-amber-600 text-white px-4 py-2.5 text-xs shadow-sm">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <WifiOff className="w-4 h-4 text-amber-200 shrink-0 animate-pulse" />
+              <WifiOff className="w-4 h-4 text-amber-200 shrink-0" />
               <span>
                 <strong>VOA East Intermittent Connectivity Detected:</strong> Operating from local IndexedDB cache ({db.patients.length} patient charts, encounters, and pharmacy formulary loaded locally). Clinical care uninterrupted.
               </span>
@@ -702,170 +702,177 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
         </div>
       )}
 
-      {/* Main Workspace Body with Responsive Navigation */}
-      <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex flex-col md:flex-row gap-6">
-        {/* Module Sidebar */}
-        <aside className="w-full md:w-64 shrink-0 space-y-3">
-          <div className={`rounded-xl border ${currentTheme.cardBorder} ${currentTheme.sidebarCardBg} p-3 shadow-xs space-y-3 transition-colors duration-200`}>
-            {/* Authorized Scope */}
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider flex items-center justify-between px-2 mb-1.5 opacity-80">
-                <span>Authorized Workstations</span>
-                <span className={`px-1.5 py-0.2 rounded font-mono font-bold ${currentTheme.accentBadge}`}>
+      {/* Main Workspace Body with Role-Driven Spacing, Borders & Color Palettes */}
+      <div className={`flex-1 w-full ${currentTheme.mainBg} transition-colors duration-200`}>
+        <div className={`max-w-7xl w-full mx-auto ${currentTheme.mainContainerPadding} flex flex-col md:flex-row ${currentTheme.layoutGap}`}>
+          {/* Module Sidebar */}
+          <aside className={`w-full ${currentTheme.sidebarWidth} shrink-0 space-y-3 transition-all duration-200`}>
+            <div className={`${currentTheme.cardRadius} ${currentTheme.sidebarBg} ${currentTheme.sidebarPadding} shadow-xs space-y-3 transition-all duration-200`}>
+              {/* Active Theme & Scope Meta */}
+              <div className={`pb-2 border-b ${currentTheme.dividerClass} flex items-center justify-between gap-2`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${currentTheme.sidebarSectionLabel}`}>
+                  Authorized Workstations
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${currentTheme.accentBadge}`}>
                   {authorizedNavItems.length}
                 </span>
-              </span>
-              <nav className="space-y-1">
+              </div>
+
+              <nav className={currentTheme.navSpacing}>
                 {authorizedNavItems.map(item => {
                   const Icon = item.icon;
                   const isActive = activeModule === item.id;
-                  
-                  let activeClass = 'bg-teal-800 text-white shadow-xs font-semibold';
-                  let inactiveClass = 'text-slate-700 hover:bg-slate-100 hover:text-slate-900';
-                  let activeIconClass = 'text-teal-200';
-                  let inactiveIconClass = 'text-teal-700';
-
-                  if (currentTheme.isHighContrast) {
-                    activeClass = 'bg-amber-500 text-black shadow-xs font-bold';
-                    inactiveClass = 'text-slate-200 hover:bg-slate-800 hover:text-white';
-                    activeIconClass = 'text-black';
-                    inactiveIconClass = 'text-amber-400';
-                  } else if (currentTheme.isFinancialLayout) {
-                    activeClass = 'bg-emerald-800 text-white shadow-xs font-semibold';
-                    inactiveClass = 'text-slate-700 hover:bg-emerald-50 hover:text-emerald-900';
-                    activeIconClass = 'text-emerald-200';
-                    inactiveIconClass = 'text-emerald-700';
-                  }
 
                   return (
                     <button
                       key={item.id}
                       onClick={() => handleNavigate(item.id, item.label)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer ${
-                        isActive ? activeClass : inactiveClass
+                      className={`w-full flex items-center gap-2.5 ${currentTheme.navItemPadding} ${currentTheme.cardRadius} text-xs transition-all text-left cursor-pointer ${
+                        isActive ? currentTheme.navActiveClass : currentTheme.navInactiveClass
                       }`}
                     >
-                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? activeIconClass : inactiveIconClass}`} />
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? currentTheme.navActiveIconClass : currentTheme.navInactiveIconClass}`} />
                       <span className="truncate">{item.label}</span>
                     </button>
                   );
                 })}
               </nav>
-            </div>
 
-            {/* Dedicated Administrator Audit Trail Section */}
-            {hasAuditTrailAccess && (
-              <div className="pt-2 border-t border-indigo-200/80">
-                <div className="px-2 mb-1.5 flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Audit & Compliance</span>
-                  </span>
-                  <span className="bg-indigo-100 text-indigo-800 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold">
-                    ADMIN & MGMT
-                  </span>
-                </div>
-                <nav className="space-y-1">
-                  <button
-                    onClick={() => handleNavigate('audit_trail', 'Audit Trail & Compliance')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors text-left cursor-pointer ${
-                      activeModule === 'audit_trail'
-                        ? 'bg-indigo-800 text-white shadow-xs'
-                        : 'text-indigo-950 bg-indigo-50/80 hover:bg-indigo-100/90 border border-indigo-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <ShieldCheck className={`w-4 h-4 shrink-0 ${activeModule === 'audit_trail' ? 'text-indigo-200' : 'text-indigo-700'}`} />
-                      <span className="truncate">Audit Trail & Compliance</span>
-                    </div>
-                    <span className="text-[10px] bg-indigo-950 text-indigo-200 px-1.5 py-0.2 rounded font-mono">
-                      {db.auditLogs?.length || 0}
+              {/* Dedicated Administrator & Management Audit Trail Section */}
+              {hasAuditTrailAccess && (
+                <div className={`pt-2.5 border-t ${currentTheme.dividerClass}`}>
+                  <div className="px-1 mb-1.5 flex items-center justify-between">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                      currentTheme.isDarkSidebar ? 'text-indigo-300' : 'text-indigo-900'
+                    }`}>
+                      <ShieldCheck className={`w-3.5 h-3.5 ${currentTheme.isDarkSidebar ? 'text-indigo-400' : 'text-indigo-600'}`} />
+                      <span>Audit & Compliance</span>
                     </span>
-                  </button>
-                </nav>
-              </div>
-            )}
-          </div>
-
-          {/* VOA East IndexedDB Offline Resiliency Card */}
-          <div className={`rounded-xl border ${currentTheme.cardBorder} ${currentTheme.sidebarCardBg} p-3.5 shadow-xs space-y-2.5 text-xs transition-colors duration-200`}>
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <span className="font-bold text-slate-900 text-[11px] flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-teal-700" />
-                IndexedDB Local Cache
-              </span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
-                effectiveOnline ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-100 text-amber-800'
-              }`}>
-                {effectiveOnline ? 'Synced' : 'Offline Active'}
-              </span>
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                      currentTheme.isDarkSidebar
+                        ? 'bg-indigo-950 text-indigo-200 border border-indigo-600'
+                        : 'bg-indigo-100 text-indigo-800'
+                    }`}>
+                      ADMIN & MGMT
+                    </span>
+                  </div>
+                  <nav className={currentTheme.navSpacing}>
+                    <button
+                      onClick={() => handleNavigate('audit_trail', 'Audit Trail & Compliance')}
+                      className={`w-full flex items-center justify-between ${currentTheme.navItemPadding} ${currentTheme.cardRadius} text-xs font-semibold transition-all text-left cursor-pointer ${
+                        activeModule === 'audit_trail'
+                          ? 'bg-indigo-600 text-white border border-indigo-400 shadow-xs'
+                          : currentTheme.isDarkSidebar
+                            ? 'text-indigo-100 bg-indigo-950/70 hover:bg-indigo-900/80 border border-indigo-700/70'
+                            : 'text-indigo-950 bg-indigo-50/80 hover:bg-indigo-100/90 border border-indigo-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <ShieldCheck className={`w-4 h-4 shrink-0 ${
+                          activeModule === 'audit_trail'
+                            ? 'text-indigo-100'
+                            : currentTheme.isDarkSidebar ? 'text-indigo-300' : 'text-indigo-700'
+                        }`} />
+                        <span className="truncate">Audit Trail & Compliance</span>
+                      </div>
+                      <span className="text-[10px] bg-indigo-950 text-indigo-200 px-1.5 py-0.2 rounded font-mono tabular-nums">
+                        {db.auditLogs?.length || 0}
+                      </span>
+                    </button>
+                  </nav>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-1 text-[11px] text-slate-600">
-              <div className="flex justify-between">
-                <span>Cached Patients:</span>
-                <strong className="text-slate-900">{db.patients.length} charts</strong>
+            {/* VOA East IndexedDB Offline Resiliency Card (Adapts cleanly to Light & Dark Role Sidebars) */}
+            <div className={`${currentTheme.cardRadius} ${currentTheme.sidebarBg} ${currentTheme.sidebarPadding} shadow-xs space-y-2.5 text-xs transition-all duration-200`}>
+              <div className={`flex items-center justify-between pb-2 border-b ${currentTheme.dividerClass}`}>
+                <span className={`font-bold text-[11px] flex items-center gap-1.5 ${
+                  currentTheme.isDarkSidebar ? 'text-white' : 'text-slate-900'
+                }`}>
+                  <Database className={`w-3.5 h-3.5 ${currentTheme.navInactiveIconClass}`} />
+                  IndexedDB Local Cache
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                  effectiveOnline
+                    ? currentTheme.isDarkSidebar ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' : 'bg-emerald-50 text-emerald-700'
+                    : 'bg-amber-100 text-amber-900'
+                }`}>
+                  {effectiveOnline ? 'Synced' : 'Offline Active'}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span>Encounters / Vitals:</span>
-                <strong className="text-slate-900">{db.encounters.length} / {db.vitals.length}</strong>
+
+              <div className={`space-y-1 text-[11px] ${currentTheme.isDarkSidebar ? 'text-slate-300' : 'text-slate-600'}`}>
+                <div className="flex justify-between">
+                  <span>Cached Patients:</span>
+                  <strong className={`tabular-nums ${currentTheme.isDarkSidebar ? 'text-white' : 'text-slate-900'}`}>{db.patients.length} charts</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Encounters / Vitals:</span>
+                  <strong className={`tabular-nums ${currentTheme.isDarkSidebar ? 'text-white' : 'text-slate-900'}`}>{db.encounters.length} / {db.vitals.length}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Drug Formulary:</span>
+                  <strong className={`tabular-nums ${currentTheme.isDarkSidebar ? 'text-white' : 'text-slate-900'}`}>{db.inventory.length} items</strong>
+                </div>
+                <div className={`flex justify-between text-[10px] pt-1 ${currentTheme.isDarkSidebar ? 'text-slate-400' : 'text-slate-400'}`}>
+                  <span>Last Snapshot:</span>
+                  <span className="tabular-nums">{lastSyncTime}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span>Drug Formulary:</span>
-                <strong className="text-slate-900">{db.inventory.length} items</strong>
-              </div>
-              <div className="flex justify-between text-[10px] text-slate-400 pt-1">
-                <span>Last Snapshot:</span>
-                <span>{lastSyncTime}</span>
+
+              <div className={`pt-2 border-t ${currentTheme.dividerClass} flex flex-col gap-1.5`}>
+                <button
+                  onClick={handleManualCacheSync}
+                  disabled={isSyncingCache}
+                  className={`w-full text-[11px] font-semibold py-1.5 ${currentTheme.cardRadius} transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                    currentTheme.isDarkSidebar
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+                  }`}
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncingCache ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingCache ? 'Caching to IndexedDB...' : 'Sync IndexedDB Now'}</span>
+                </button>
+                <button
+                  onClick={() => handleToggleOfflineSimulation(!simulateOffline)}
+                  className={`w-full text-[11px] font-semibold py-1.5 ${currentTheme.cardRadius} border transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                    simulateOffline
+                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                      : currentTheme.isDarkSidebar
+                        ? 'bg-black/40 hover:bg-slate-800 text-slate-200 border-slate-700'
+                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {simulateOffline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                  <span>{simulateOffline ? 'End Offline Simulation' : 'Simulate VOA East Offline'}</span>
+                </button>
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
-              <button
-                onClick={handleManualCacheSync}
-                disabled={isSyncingCache}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-semibold py-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <RefreshCw className={`w-3 h-3 text-slate-600 ${isSyncingCache ? 'animate-spin' : ''}`} />
-                <span>{isSyncingCache ? 'Caching to IndexedDB...' : 'Sync IndexedDB Now'}</span>
-              </button>
-              <button
-                onClick={() => setSimulateOffline(!simulateOffline)}
-                className={`w-full text-[11px] font-semibold py-1.5 rounded-lg border transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                  simulateOffline 
-                    ? 'bg-amber-50 text-amber-900 border-amber-300' 
-                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
-                }`}
-              >
-                {simulateOffline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                <span>{simulateOffline ? 'End Offline Simulation' : 'Simulate VOA East Offline'}</span>
-              </button>
+            {/* Infrastructure Health Card */}
+            <div className={`bg-slate-900 text-slate-300 ${currentTheme.cardRadius} p-4 border ${currentTheme.cardBorder} text-[11px] space-y-2`}>
+              <div className="flex items-center justify-between font-bold text-white text-xs">
+                <span>Facility Telemetry</span>
+                <span className="text-[10px] font-mono text-emerald-400">ONLINE</span>
+              </div>
+              <div className="text-slate-400">
+                Grid Status: <strong className="text-emerald-400">Online</strong>
+              </div>
+              <div className="text-slate-400">
+                Cummins 500kVA: <strong className="text-slate-200">Standby (88% Diesel)</strong>
+              </div>
+              <div className="text-slate-400">
+                Facility Address: <strong className="text-slate-200">VOA East Community, Monrovia</strong>
+              </div>
+              <div className="text-slate-400">
+                Dual Currency: <strong className="text-teal-300">USD & 195 LRD</strong>
+              </div>
             </div>
-          </div>
+          </aside>
 
-          {/* Infrastructure Health Card */}
-          <div className="bg-slate-900 text-slate-300 rounded-xl p-4 border border-slate-800 text-[11px] space-y-2">
-            <div className="flex items-center justify-between font-bold text-white text-xs">
-              <span>Facility Telemetry</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            </div>
-            <div className="text-slate-400">
-              Grid Status: <strong className="text-emerald-400">Online</strong>
-            </div>
-            <div className="text-slate-400">
-              Cummins 500kVA: <strong className="text-slate-200">Standby (88% Diesel)</strong>
-            </div>
-            <div className="text-slate-400">
-              Facility Address: <strong className="text-slate-200">VOA East Community, Monrovia</strong>
-            </div>
-            <div className="text-slate-400">
-              Dual Currency: <strong className="text-teal-300">USD & 195 LRD</strong>
-            </div>
-          </div>
-        </aside>
-
-        {/* Dynamic Workspace Workstation View */}
-        <main className="flex-1 min-w-0 space-y-6">
+          {/* Dynamic Workspace Workstation View */}
+          <main className="flex-1 min-w-0 space-y-6">
           {/* Dynamic Role-Specific Analytics Dashboard (Powered by Recharts) */}
           <RoleDashboard
             currentUser={currentUser}
@@ -894,6 +901,7 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
           {activeModule === 'audit_trail' && <SecureAuditTrailWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
           {activeModule === 'quality' && <SecureQualityWorkstation currentUser={currentUser} onBreakGlass={() => setShowBreakGlassModal(true)} />}
         </main>
+        </div>
       </div>
 
       {/* Modals */}
@@ -1038,12 +1046,12 @@ export const StaffWorkspace: React.FC<StaffWorkspaceProps> = ({
                     </div>
 
                     <div className="pt-2 border-t border-slate-100/80 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-500">
-                        {theme.isHighContrast ? '🌓 High Contrast' : theme.isFinancialLayout ? '💰 Financial Layout' : '🩺 Clinical Daylight'}
+                      <span className="text-slate-500 font-mono text-[10px]">
+                        {theme.tableDensity} • {theme.borderWidth.replace('border-', 'border ')} • {theme.cardRadius}
                       </span>
                       {isRoleDefault && (
                         <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-semibold">
-                          Recommended for {currentUser.fullName.split(' ')[0]}
+                          Role Default ({theme.primaryRole})
                         </span>
                       )}
                     </div>

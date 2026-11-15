@@ -8,7 +8,7 @@ import { AuditEvent, UserAccount, UserRole } from '../types/auth';
 import { getDatabaseState, updateDatabaseState } from './storageService';
 
 export interface AuditLogFilterOptions {
-  category?: 'ALL' | 'LOGINS' | 'MODIFICATIONS' | 'EXPORTS' | 'USER_ACTIONS' | 'SECURITY';
+  category?: 'ALL' | 'LOGINS' | 'ACCESSES' | 'BREAK_GLASS' | 'MODIFICATIONS' | 'EXPORTS' | 'USER_ACTIONS' | 'SECURITY';
   action?: string;
   module?: string;
   userId?: string;
@@ -22,6 +22,8 @@ export interface AuditLogFilterOptions {
 export interface AuditComplianceMetrics {
   totalEvents: number;
   loginEvents: number;
+  recordAccesses: number;
+  breakGlassCount: number;
   recordModifications: number;
   dataExports: number;
   securityFlags: number;
@@ -366,13 +368,17 @@ class AuditTrailService {
     const logs = db.auditLogs || [];
 
     const isLogin = (a: string) => a === 'LOGIN' || a === 'LOGOUT';
-    const isMod = (a: string) => ['CREATE', 'UPDATE', 'SIGN', 'DISPENSE', 'RELEASE_RESULT', 'COLLECT_PAYMENT'].includes(a);
+    const isAccess = (a: string) => a === 'READ' || a === 'NAVIGATE_MODULE' || a === 'OPEN_SEARCH';
+    const isBreakGlass = (a: string) => a === 'BREAK_GLASS';
+    const isMod = (a: string) => ['CREATE', 'UPDATE', 'SIGN', 'DISPENSE', 'RELEASE_RESULT', 'COLLECT_PAYMENT', 'REFUND'].includes(a);
     const isExport = (a: string) => a === 'EXPORT';
     const isSec = (s: string, a: string) => s === 'FLAGGED' || s === 'DENIED' || a === 'BREAK_GLASS' || a === 'DELETE_ATTEMPT';
 
     return {
       totalEvents: logs.length,
       loginEvents: logs.filter(l => isLogin(l.action)).length,
+      recordAccesses: logs.filter(l => isAccess(l.action as string)).length,
+      breakGlassCount: logs.filter(l => isBreakGlass(l.action)).length,
       recordModifications: logs.filter(l => isMod(l.action)).length,
       dataExports: logs.filter(l => isExport(l.action)).length,
       securityFlags: logs.filter(l => isSec(l.status, l.action)).length,
@@ -390,6 +396,8 @@ class AuditTrailService {
     const logs = db.auditLogs || [];
 
     const isLogin = (a: string) => a === 'LOGIN' || a === 'LOGOUT';
+    const isAccess = (a: string) => a === 'READ' || a === 'NAVIGATE_MODULE' || a === 'OPEN_SEARCH';
+    const isBreakGlass = (a: string) => a === 'BREAK_GLASS';
     const isMod = (a: string) => ['CREATE', 'UPDATE', 'SIGN', 'DISPENSE', 'RELEASE_RESULT', 'COLLECT_PAYMENT', 'REFUND'].includes(a);
     const isExport = (a: string) => a === 'EXPORT';
     const isSec = (s: string, a: string) => s === 'FLAGGED' || s === 'DENIED' || a === 'BREAK_GLASS' || a === 'DELETE_ATTEMPT';
@@ -397,6 +405,8 @@ class AuditTrailService {
     return logs.filter(log => {
       // 1. Category
       if (options.category === 'LOGINS' && !isLogin(log.action)) return false;
+      if (options.category === 'ACCESSES' && !isAccess(log.action as string)) return false;
+      if (options.category === 'BREAK_GLASS' && !isBreakGlass(log.action)) return false;
       if (options.category === 'MODIFICATIONS' && !isMod(log.action)) return false;
       if (options.category === 'EXPORTS' && !isExport(log.action)) return false;
       if (options.category === 'USER_ACTIONS' && !['NAVIGATE_MODULE', 'OPEN_SEARCH', 'READ', 'CONFIG_CHANGE', 'UPDATE'].includes(log.action as string)) return false;

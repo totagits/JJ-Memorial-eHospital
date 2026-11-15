@@ -31,26 +31,47 @@ import {
   ExternalLink,
   Layers,
   CheckCircle,
-  FileText
+  FileText,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Box,
+  FileSearch,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Cell,
+} from 'recharts';
 import { getDatabaseState, updateDatabaseState } from '../../services/storageService';
 import { UserAccount, AuditEvent, UserRole } from '../../types/auth';
 import { auditTrailService } from '../../services/auditTrailService';
 import { backgroundSyncService, EMRCloudSnapshot } from '../../services/backgroundSyncService';
+import { SecurityAudit3DTopology } from './SecurityAudit3DTopology';
 
 interface AuditTrailWorkstationProps {
   currentUser: UserAccount;
 }
 
+type AuditSortField = 'timestamp' | 'userName' | 'action' | 'module' | 'patientMrn' | 'ipAddress';
+type SortDirection = 'asc' | 'desc';
+
 export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ currentUser }) => {
   const db = getDatabaseState();
-  const [activeTab, setActiveTab] = useState<'AUDIT_LEDGER' | 'CLOUD_SNAPSHOTS'>('AUDIT_LEDGER');
+  const [activeTab, setActiveTab] = useState<'AUDIT_LEDGER' | 'SECURITY_TOPOLOGY' | 'CLOUD_SNAPSHOTS'>('AUDIT_LEDGER');
 
-  // Search & Filters for Audit Ledger
+  // Search, Filters & Column Sorting for Audit Ledger
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'LOGINS' | 'MODIFICATIONS' | 'EXPORTS' | 'USER_ACTIONS' | 'SECURITY'>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'LOGINS' | 'ACCESSES' | 'BREAK_GLASS' | 'MODIFICATIONS' | 'EXPORTS' | 'USER_ACTIONS' | 'SECURITY'>('ALL');
   const [actionFilter, setActionFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SUCCESS' | 'FLAGGED' | 'DENIED'>('ALL');
+  const [sortField, setSortField] = useState<AuditSortField>('timestamp');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [, setAuditLogRevision] = useState(0);
 
   // Subscribe to real-time audit trail logs
@@ -64,7 +85,7 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
   // Inspection & Simulation Modals
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
   const [showSimulateModal, setShowSimulateModal] = useState(false);
-  const [simAction, setSimAction] = useState<'LOGIN' | 'UPDATE' | 'EXPORT' | 'BREAK_GLASS'>('LOGIN');
+  const [simAction, setSimAction] = useState<'LOGIN' | 'READ' | 'UPDATE' | 'EXPORT' | 'BREAK_GLASS'>('LOGIN');
   const [simDetails, setSimDetails] = useState('Staff member logged in from Mobile Triage tablet with biometric MFA token.');
   const [simEntityType, setSimEntityType] = useState<'PATIENT' | 'ENCOUNTER' | 'VITALS' | 'PRESCRIPTION'>('ENCOUNTER');
   const [simMrn, setSimMrn] = useState('JJM-2026-00101');
@@ -100,15 +121,96 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
   }, []);
 
   // Filter audit logs using auditTrailService
-  const filteredLogs = auditTrailService.getFilteredLogs({
+  const rawFilteredLogs = auditTrailService.getFilteredLogs({
     category: categoryFilter,
     action: actionFilter,
     status: statusFilter,
     searchQuery,
   });
 
+  // Sortable table handler & sorted dataset
+  const handleSortColumn = (field: AuditSortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection(field === 'timestamp' ? 'desc' : 'asc');
+    }
+  };
+
+  const sortedLogs = React.useMemo(() => {
+    const copy = [...rawFilteredLogs];
+    copy.sort((a, b) => {
+      let valA = '';
+      let valB = '';
+      if (sortField === 'timestamp') {
+        const tA = new Date(a.timestamp).getTime();
+        const tB = new Date(b.timestamp).getTime();
+        return sortDirection === 'asc' ? tA - tB : tB - tA;
+      }
+      if (sortField === 'userName') {
+        valA = `${a.userName} ${a.userRole}`.toLowerCase();
+        valB = `${b.userName} ${b.userRole}`.toLowerCase();
+      } else if (sortField === 'action') {
+        valA = `${a.action} ${a.status}`.toLowerCase();
+        valB = `${b.action} ${b.status}`.toLowerCase();
+      } else if (sortField === 'module') {
+        valA = a.module.toLowerCase();
+        valB = b.module.toLowerCase();
+      } else if (sortField === 'patientMrn') {
+        valA = (a.patientMrn || 'zzzz').toLowerCase();
+        valB = (b.patientMrn || 'zzzz').toLowerCase();
+      } else if (sortField === 'ipAddress') {
+        valA = a.ipAddress.toLowerCase();
+        valB = b.ipAddress.toLowerCase();
+      }
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [rawFilteredLogs, sortField, sortDirection]);
+
+  // Keep filteredLogs alias for CSV/JSON export
+  const filteredLogs = sortedLogs;
+
   // Real-time compliance metrics
   const metrics = auditTrailService.getComplianceMetrics();
+
+  // Analytics datasets for Recharts visualization
+  const categoryChartData = React.useMemo(
+    () => [
+      { name: 'Logins & MFA', count: metrics.loginEvents, color: '#0284c7' },
+      { name: 'Record Access', count: metrics.recordAccesses, color: '#0d9488' },
+      { name: 'Break-Glass', count: metrics.breakGlassCount, color: '#e11d48' },
+      { name: 'Modifications', count: metrics.recordModifications, color: '#4f46e5' },
+      { name: 'Exports', count: metrics.dataExports, color: '#7c3aed' },
+    ],
+    [metrics]
+  );
+
+  const moduleChartData = React.useMemo(() => {
+    const allLogs = db.auditLogs || [];
+    const counts: Record<string, number> = {};
+    allLogs.forEach(ev => {
+      counts[ev.module] = (counts[ev.module] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([module, count]) => ({ module, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 7);
+  }, [db.auditLogs]);
+
+  const renderSortIcon = (field: AuditSortField) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-3 h-3 text-slate-400 inline-block ml-1" />;
+    }
+    return sortDirection === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-teal-700 inline-block ml-1" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-teal-700 inline-block ml-1" />
+    );
+  };
 
   // Verify Audit Chain Integrity
   const handleVerifyIntegrity = () => {
@@ -210,6 +312,14 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
   const handleLogSimulatedEvent = () => {
     if (simAction === 'LOGIN') {
       auditTrailService.logLogin(currentUser, 'BIOMETRIC_SMARTCARD_MFA', '192.168.10.45 (Local Clinical Terminal)');
+    } else if (simAction === 'READ') {
+      auditTrailService.logUserAction({
+        user: currentUser,
+        action: 'READ',
+        module: 'OPD',
+        patientMrn: simMrn,
+        details: simDetails,
+      });
     } else if (simAction === 'UPDATE') {
       auditTrailService.logRecordModification({
         user: currentUser,
@@ -247,6 +357,7 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
     switch (action) {
       case 'LOGIN': return 'bg-sky-50 text-sky-800 border-sky-200';
       case 'LOGOUT': return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'READ': return 'bg-teal-50 text-teal-800 border-teal-300 font-bold';
       case 'CREATE': return 'bg-emerald-50 text-emerald-800 border-emerald-200';
       case 'UPDATE': return 'bg-teal-50 text-teal-800 border-teal-200';
       case 'SIGN': return 'bg-indigo-50 text-indigo-800 border-indigo-200';
@@ -306,7 +417,7 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
         </div>
 
         {/* Tab Selector */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+        <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
           <button
             onClick={() => setActiveTab('AUDIT_LEDGER')}
             className={`text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -317,9 +428,21 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
           >
             <ShieldCheck className="w-3.5 h-3.5 text-teal-700" />
             <span>Audit Trail Ledger</span>
-            <span className="bg-teal-100 text-teal-800 text-[10px] px-1.5 py-0.2 rounded font-mono font-bold">
+            <span className="bg-teal-100 text-teal-800 text-[10px] px-1.5 py-0.2 rounded font-mono font-bold tabular-nums">
               {metrics.totalEvents}
             </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('SECURITY_TOPOLOGY')}
+            className={`text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'SECURITY_TOPOLOGY'
+                ? 'bg-slate-900 text-teal-300 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Box className="w-3.5 h-3.5 text-indigo-500" />
+            <span>3D Security Topology</span>
           </button>
 
           <button
@@ -367,68 +490,127 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
               className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs cursor-pointer hover:border-sky-300 transition-colors"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-slate-500">User Logins & Sessions</span>
+                <span className="text-[11px] font-semibold text-slate-500">Login Events & MFA</span>
                 <UserCheck className="w-4 h-4 text-sky-600" />
               </div>
               <div className="mt-1.5 text-xl font-extrabold text-sky-900 font-mono tabular-nums">
                 {metrics.loginEvents}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                Biometric & Role MFA
+                OIDC & Biometric Sessions
               </div>
             </div>
 
             <div 
-              onClick={() => { setCategoryFilter('MODIFICATIONS'); setStatusFilter('ALL'); }}
+              onClick={() => { setCategoryFilter('ACCESSES'); setStatusFilter('ALL'); }}
               className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs cursor-pointer hover:border-teal-300 transition-colors"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-slate-500">Record Modifications</span>
-                <Settings className="w-4 h-4 text-teal-600" />
+                <span className="text-[11px] font-semibold text-slate-500">Record Accesses (READ)</span>
+                <FileSearch className="w-4 h-4 text-teal-600" />
               </div>
               <div className="mt-1.5 text-xl font-extrabold text-teal-900 font-mono tabular-nums">
-                {metrics.recordModifications}
+                {metrics.recordAccesses}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                Charts, Orders & Billing
+                Chart Reads & Search Queries
               </div>
             </div>
 
             <div 
-              onClick={() => { setCategoryFilter('EXPORTS'); setStatusFilter('ALL'); }}
-              className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs cursor-pointer hover:border-violet-300 transition-colors"
+              onClick={() => { setCategoryFilter('BREAK_GLASS'); setStatusFilter('ALL'); }}
+              className={`p-3.5 rounded-xl border shadow-xs cursor-pointer transition-colors ${
+                metrics.breakGlassCount > 0
+                  ? 'bg-rose-50/80 border-rose-300 hover:bg-rose-50'
+                  : 'bg-white border-slate-200 hover:border-rose-300'
+              }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-slate-500">Patient Data Exports</span>
-                <FileSpreadsheet className="w-4 h-4 text-violet-600" />
+                <span className="text-[11px] font-semibold text-rose-800">Break-Glass Protocols</span>
+                <Key className="w-4 h-4 text-rose-600" />
               </div>
-              <div className="mt-1.5 text-xl font-extrabold text-violet-900 font-mono tabular-nums">
-                {metrics.dataExports}
+              <div className="mt-1.5 text-xl font-extrabold text-rose-900 font-mono tabular-nums">
+                {metrics.breakGlassCount}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                Regulatory Downloads
+              <div className="text-[10px] text-rose-700 mt-0.5 font-mono">
+                Emergency Chart Overrides
               </div>
             </div>
 
             <div 
               onClick={() => { setCategoryFilter('SECURITY'); setStatusFilter('ALL'); }}
-              className={`p-3.5 rounded-xl border shadow-xs cursor-pointer transition-colors ${
-                metrics.securityFlags > 0 
-                  ? 'bg-rose-50/70 border-rose-200 hover:bg-rose-50' 
-                  : 'bg-white border-slate-200 hover:border-slate-300'
-              }`}
+              className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs cursor-pointer hover:border-amber-300 transition-colors"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-slate-500">Security Flags</span>
-                <AlertTriangle className={`w-4 h-4 ${metrics.securityFlags > 0 ? 'text-rose-600' : 'text-slate-400'}`} />
+                <span className="text-[11px] font-semibold text-slate-500">Security Flags & Exports</span>
+                <AlertTriangle className={`w-4 h-4 ${metrics.securityFlags > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
               </div>
-              <div className={`mt-1.5 text-xl font-extrabold font-mono tabular-nums ${
-                metrics.securityFlags > 0 ? 'text-rose-900' : 'text-slate-900'
-              }`}>
-                {metrics.securityFlags}
+              <div className="mt-1.5 text-xl font-extrabold text-slate-900 font-mono tabular-nums">
+                {metrics.securityFlags} <span className="text-xs font-normal text-slate-400">/ {metrics.dataExports} exp</span>
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                Break-Glass & Denied Access
+                Flagged & Denied Attempts
+              </div>
+            </div>
+          </div>
+
+          {/* Audit Telemetry Visualization (Recharts) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900">Security Event Classification</h3>
+                  <p className="text-[11px] text-slate-500">Distribution across Logins, Record Accesses, Break-Glass & Changes</p>
+                </div>
+                <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                  Live Telemetry
+                </span>
+              </div>
+              <div className="h-44 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={categoryChartData} margin={{ top: 6, right: 12, left: -18, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#475569' }} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ fontSize: '11px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                    />
+                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                      {categoryChartData.map((entry, idx) => (
+                        <Cell key={`cat-${idx}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900">Workstation Module Audit Density</h3>
+                  <p className="text-[11px] text-slate-500">Audit footprint by clinical & operational department</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('SECURITY_TOPOLOGY')}
+                  className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded cursor-pointer"
+                >
+                  Open 3D Topology →
+                </button>
+              </div>
+              <div className="h-44 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={moduleChartData} margin={{ top: 6, right: 12, left: -18, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="module" tick={{ fontSize: 10, fill: '#475569' }} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ fontSize: '11px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                    />
+                    <Bar dataKey="count" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </div>
@@ -491,17 +673,37 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
-                Logins & Sessions ({metrics.loginEvents})
+                Login Events ({metrics.loginEvents})
+              </button>
+              <button
+                onClick={() => setCategoryFilter('ACCESSES')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                  categoryFilter === 'ACCESSES'
+                    ? 'bg-teal-700 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Record Accesses ({metrics.recordAccesses})
+              </button>
+              <button
+                onClick={() => setCategoryFilter('BREAK_GLASS')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                  categoryFilter === 'BREAK_GLASS'
+                    ? 'bg-rose-700 text-white'
+                    : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+                }`}
+              >
+                Break-Glass Activations ({metrics.breakGlassCount})
               </button>
               <button
                 onClick={() => setCategoryFilter('MODIFICATIONS')}
                 className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
                   categoryFilter === 'MODIFICATIONS'
-                    ? 'bg-teal-700 text-white'
+                    ? 'bg-indigo-700 text-white'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
-                Record Modifications ({metrics.recordModifications})
+                Modifications ({metrics.recordModifications})
               </button>
               <button
                 onClick={() => setCategoryFilter('EXPORTS')}
@@ -511,27 +713,17 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
-                Patient Data Exports ({metrics.dataExports})
-              </button>
-              <button
-                onClick={() => setCategoryFilter('USER_ACTIONS')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                  categoryFilter === 'USER_ACTIONS'
-                    ? 'bg-indigo-700 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Staff Actions & Navigation
+                Exports ({metrics.dataExports})
               </button>
               <button
                 onClick={() => setCategoryFilter('SECURITY')}
                 className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
                   categoryFilter === 'SECURITY'
-                    ? 'bg-rose-700 text-white'
+                    ? 'bg-amber-700 text-white'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
-                Security & Break-Glass ({metrics.securityFlags})
+                All Security Flags ({metrics.securityFlags})
               </button>
             </div>
 
@@ -593,36 +785,99 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
                 <option value="ALL">All Actions</option>
                 <option value="LOGIN">LOGIN</option>
                 <option value="LOGOUT">LOGOUT</option>
+                <option value="READ">READ (Record Access)</option>
+                <option value="BREAK_GLASS">BREAK_GLASS</option>
                 <option value="CREATE">CREATE</option>
                 <option value="UPDATE">UPDATE</option>
                 <option value="SIGN">SIGN</option>
                 <option value="DISPENSE">DISPENSE</option>
                 <option value="RELEASE_RESULT">RELEASE_RESULT</option>
                 <option value="COLLECT_PAYMENT">COLLECT_PAYMENT</option>
-                <option value="BREAK_GLASS">BREAK_GLASS</option>
                 <option value="EXPORT">EXPORT</option>
               </select>
             </div>
           </div>
 
-          {/* Audit Logs Table */}
+          {/* Sortable Audit Logs Table */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600">
+              <span>
+                Click any column header to sort (<strong className="text-slate-900 font-mono">{sortField}</strong> • <strong className="uppercase font-mono">{sortDirection}</strong>)
+              </span>
+              <span className="font-mono tabular-nums text-slate-500">
+                {sortedLogs.length} matching records
+              </span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200 select-none">
                   <tr>
-                    <th className="py-3 px-4">Timestamp & ID</th>
-                    <th className="py-3 px-4">Staff Member & Role</th>
-                    <th className="py-3 px-4">Action & Status</th>
-                    <th className="py-3 px-4">Module</th>
-                    <th className="py-3 px-4">Patient MRN</th>
+                    <th className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSortColumn('timestamp')}
+                        className="inline-flex items-center hover:text-teal-800 cursor-pointer font-semibold"
+                      >
+                        Timestamp & ID
+                        {renderSortIcon('timestamp')}
+                      </button>
+                    </th>
+                    <th className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSortColumn('userName')}
+                        className="inline-flex items-center hover:text-teal-800 cursor-pointer font-semibold"
+                      >
+                        Staff Member & Role
+                        {renderSortIcon('userName')}
+                      </button>
+                    </th>
+                    <th className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSortColumn('action')}
+                        className="inline-flex items-center hover:text-teal-800 cursor-pointer font-semibold"
+                      >
+                        Action & Status
+                        {renderSortIcon('action')}
+                      </button>
+                    </th>
+                    <th className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSortColumn('module')}
+                        className="inline-flex items-center hover:text-teal-800 cursor-pointer font-semibold"
+                      >
+                        Module
+                        {renderSortIcon('module')}
+                      </button>
+                    </th>
+                    <th className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSortColumn('patientMrn')}
+                        className="inline-flex items-center hover:text-teal-800 cursor-pointer font-semibold"
+                      >
+                        Patient MRN
+                        {renderSortIcon('patientMrn')}
+                      </button>
+                    </th>
                     <th className="py-3 px-4">Details & Compliance Summary</th>
-                    <th className="py-3 px-4">IP / Terminal</th>
+                    <th className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSortColumn('ipAddress')}
+                        className="inline-flex items-center hover:text-teal-800 cursor-pointer font-semibold"
+                      >
+                        IP / Terminal
+                        {renderSortIcon('ipAddress')}
+                      </button>
+                    </th>
                     <th className="py-3 px-4 text-right">Inspect</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredLogs.length === 0 ? (
+                  {sortedLogs.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-slate-400">
                         <Database className="w-8 h-8 mx-auto mb-2 opacity-40 text-slate-400" />
@@ -631,13 +886,13 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
                       </td>
                     </tr>
                   ) : (
-                    filteredLogs.map(log => (
-                      <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                    sortedLogs.map(log => (
+                      <tr key={log.id} className={`hover:bg-slate-50/80 transition-colors ${log.action === 'BREAK_GLASS' ? 'bg-rose-50/40' : ''}`}>
                         <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="font-mono text-slate-800 font-medium">
+                          <div className="font-mono text-slate-800 font-medium tabular-nums">
                             {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                           </div>
-                          <div className="text-[10px] text-slate-400 font-mono">
+                          <div className="text-[10px] text-slate-400 font-mono tabular-nums">
                             {new Date(log.timestamp).toISOString().split('T')[0]} • {log.id}
                           </div>
                         </td>
@@ -664,7 +919,7 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
                           {log.module}
                         </td>
 
-                        <td className="py-3 px-4 whitespace-nowrap font-mono text-[11px] font-bold text-teal-800">
+                        <td className="py-3 px-4 whitespace-nowrap font-mono text-[11px] font-bold text-teal-800 tabular-nums">
                           {log.patientMrn || <span className="text-slate-300 font-normal">—</span>}
                         </td>
 
@@ -693,11 +948,21 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
             </div>
 
             <div className="bg-slate-50 px-4 py-2.5 border-t border-slate-200 text-slate-500 text-[11px] flex items-center justify-between">
-              <span>Showing {filteredLogs.length} of {db.auditLogs?.length || 0} compliance audit records</span>
+              <span className="tabular-nums">Showing {sortedLogs.length} of {db.auditLogs?.length || 0} compliance audit records</span>
               <span className="font-mono text-teal-800">ISO 27799 / MoH Liberia EHR Certified</span>
             </div>
           </div>
         </>
+      )}
+
+      {/* ============================================================== */}
+      {/* TAB 2: 3D SECURITY & AUDIT TOPOLOGY                            */}
+      {/* ============================================================== */}
+      {activeTab === 'SECURITY_TOPOLOGY' && (
+        <SecurityAudit3DTopology
+          logs={db.auditLogs || []}
+          onInspectEvent={ev => setSelectedEvent(ev)}
+        />
       )}
 
       {/* ============================================================== */}
@@ -952,6 +1217,7 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
                     const val = e.target.value as any;
                     setSimAction(val);
                     if (val === 'LOGIN') setSimDetails('Staff member authenticated via Biometric smart card from Mobile Triage terminal.');
+                    if (val === 'READ') setSimDetails('Clinician accessed longitudinal EMR chart, allergies, and lab history.');
                     if (val === 'UPDATE') setSimDetails('Attending Physician updated ICD-11 diagnosis and signed clinical chart.');
                     if (val === 'EXPORT') setSimDetails('Compliance officer exported outpatient encounters to Ministry of Health portal.');
                     if (val === 'BREAK_GLASS') setSimDetails('Emergency resuscitation override activated for unconscious acute trauma patient.');
@@ -959,6 +1225,7 @@ export const AuditTrailWorkstation: React.FC<AuditTrailWorkstationProps> = ({ cu
                   className="w-full border border-slate-300 rounded-lg p-2 bg-white"
                 >
                   <option value="LOGIN">LOGIN — User Authentication</option>
+                  <option value="READ">READ — Patient Record Access</option>
                   <option value="UPDATE">UPDATE — Record Modification</option>
                   <option value="EXPORT">EXPORT — Patient Data Export</option>
                   <option value="BREAK_GLASS">BREAK_GLASS — Security Override</option>
