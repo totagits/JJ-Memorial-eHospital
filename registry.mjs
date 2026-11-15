@@ -2,7 +2,13 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migration = new URL('./migrations/001_patient_registry.sql', import.meta.url);
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql'];
+const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
+  'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
+const clinicians = new Set(['USR-001', 'USR-002']);
+const times = new Set(['09:00 AM', '10:00 AM', '11:30 AM', '02:00 PM', '03:30 PM']);
+const maxText = (value, limit) => typeof value === 'string' && value === value.trim()
+  && value.length <= limit && !value.includes('\0');
 const cookie = '__Host-jj_registry';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -27,10 +33,14 @@ export async function migrateRegistry(database) {
   await transaction(database, async client => {
     await client.query('SELECT pg_advisory_xact_lock(5728101)');
     await client.query('CREATE TABLE IF NOT EXISTS registry_migrations (version integer PRIMARY KEY)');
-    const applied = await client.query('SELECT 1 FROM registry_migrations WHERE version = 1');
-    if (applied.rowCount) return;
-    await client.query(await readFile(migration, 'utf8'));
-    await client.query('INSERT INTO registry_migrations VALUES (1)');
+    const { rows } = await client.query('SELECT version FROM registry_migrations');
+    const applied = new Set(rows.map(row => row.version));
+    for (const [index, file] of migrations.entries()) {
+      const version = index + 1;
+      if (applied.has(version)) continue;
+      await client.query(await readFile(new URL('./migrations/' + file, import.meta.url), 'utf8'));
+      await client.query('INSERT INTO registry_migrations VALUES ($1)', [version]);
+    }
   });
 }
 
@@ -67,6 +77,31 @@ export function registryRoutes(database, origin) {
       );
     });
     res.cookie(cookie, token, { ...cookieOptions, maxAge: 8 * 3600 * 1000 }).json(staff);
+  }));
+
+  router.post('/appointments', route(async (req, res) => {
+    const { id, firstName, lastName, phone, email, department, clinicianId, date, timeSlot, reason } = req.body ?? {};
+    const parsed = typeof date === 'string' ? new Date(date) : new Date(NaN);
+    const validDate = Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
+    const today = new Date().toISOString().slice(0, 10);
+    const horizon = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
+    if (typeof id !== 'string' || !uuid.test(id) ||
+        !maxText(firstName, 80) || !firstName || !maxText(lastName, 80) || !lastName ||
+        !maxText(phone, 32) || !/^[+0-9 ().-]+$/.test(phone) || !/^\d{7,15}$/.test(phone.replace(/\D/g, '')) ||
+        !maxText(email, 254) || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ||
+        !departments.has(department) || (clinicianId !== '' && !clinicians.has(clinicianId)) ||
+        !validDate || date < today || date > horizon || !times.has(timeSlot) ||
+        !maxText(reason, 500) || !reason) return res.sendStatus(400);
+    await transaction(database, async client => {
+      const result = await client.query(
+        'INSERT INTO appointment_requests (id,first_name,last_name,phone,email,department,clinician_id,requested_date,requested_time,reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING',
+        [id, firstName, lastName, phone, email || null, department, clinicianId || null, date, timeSlot, reason],
+      );
+      if (result.rowCount) await client.query(
+        "INSERT INTO appointment_request_audit (request_id,actor,status) VALUES ($1,'public','pending')", [id],
+      );
+    });
+    res.status(202).json({ id, status: 'received' });
   }));
 
   router.use((req, res, next) => {
@@ -119,6 +154,40 @@ export function registryRoutes(database, origin) {
     });
     if (!patient) return res.sendStatus(404);
     res.json(patient);
+  }));
+  router.get('/appointments', route(async (_req, res) => {
+    if (res.locals.staff.role !== 'registrar') return res.sendStatus(403);
+    const { rows } = await database.query(
+      `SELECT id, first_name AS "firstName", last_name AS "lastName", phone, email, department, clinician_id AS "clinicianId",
+        requested_date::text AS date, requested_time AS "timeSlot", reason, patient_mrn AS "patientMrn", status
+       FROM appointment_requests WHERE status IN ('pending','contacted')
+       ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END, created_at DESC, id LIMIT 50`,
+    );
+    res.json(rows);
+  }));
+  router.post('/appointments/:id/review', route(async (req, res) => {
+    const { username, role } = res.locals.staff;
+    if (role !== 'registrar') return res.sendStatus(403);
+    const { id } = req.params;
+    const { status, patientMrn } = req.body ?? {};
+    if (!uuid.test(id) || !['contacted', 'closed'].includes(status) ||
+        (patientMrn !== '' && (typeof patientMrn !== 'string' || !uuid.test(patientMrn)))) return res.sendStatus(400);
+    const result = await transaction(database, async client => {
+      const { rows: [current] } = await client.query(
+        'SELECT status, patient_mrn FROM appointment_requests WHERE id=$1 FOR UPDATE', [id],
+      );
+      if (!current) return 404;
+      const mrn = patientMrn || current.patient_mrn;
+      if (current.status === status && current.patient_mrn === mrn) return 204;
+      if (current.status === 'closed') return 409;
+      if (mrn && !(await client.query('SELECT 1 FROM registry_patients WHERE mrn=$1', [mrn])).rowCount) return 400;
+      await client.query('UPDATE appointment_requests SET status=$2, patient_mrn=$3 WHERE id=$1', [id, status, mrn]);
+      await client.query(
+        'INSERT INTO appointment_request_audit (request_id,actor,status,patient_mrn) VALUES ($1,$2,$3,$4)', [id, username, status, mrn],
+      );
+      return 204;
+    });
+    res.sendStatus(result);
   }));
   router.use((_req, res) => res.sendStatus(404));
   router.use((error, _req, res, _next) => {

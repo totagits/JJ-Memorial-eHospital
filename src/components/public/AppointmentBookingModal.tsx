@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
-import { X, Calendar, Clock, User, Phone, Mail, CheckCircle2, AlertCircle } from 'lucide-react';
-import { getDatabaseState, updateDatabaseState, logAuditEvent } from '../../services/storageService';
-import { Appointment } from '../../types/patient';
+import { X, Calendar, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface AppointmentBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (appointment: Appointment) => void;
   initialClinicianId?: string;
   initialDepartment?: string;
 }
@@ -14,152 +11,80 @@ interface AppointmentBookingModalProps {
 export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = ({
   isOpen,
   onClose,
-  onSuccess,
   initialClinicianId,
   initialDepartment,
 }) => {
-  const db = getDatabaseState();
+  const [requestId] = useState(() => crypto.randomUUID());
 
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     phone: '',
     email: '',
-    dateOfBirth: '',
-    department: initialDepartment || 'Internal Medicine & OPD',
-    clinicianId: initialClinicianId || 'USR-002',
-    date: '2026-11-04',
+    department: ['Pediatrics & Child Wellness', 'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult'].includes(initialDepartment ?? '') ? initialDepartment! : 'Internal Medicine & OPD',
+    clinicianId: ['USR-001', 'USR-002'].includes(initialClinicianId ?? '') ? initialClinicianId! : '',
+    date: '',
     timeSlot: '10:00 AM',
     reason: '',
   });
 
-  React.useEffect(() => {
-    if (isOpen) {
-      if (initialClinicianId) {
-        setFormData(prev => ({ ...prev, clinicianId: initialClinicianId }));
-      }
-      if (initialDepartment) {
-        setFormData(prev => ({ ...prev, department: initialDepartment }));
-      }
-    }
-  }, [isOpen, initialClinicianId, initialDepartment]);
-
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [confirmedAppointment, setConfirmedAppointment] = useState<Appointment | null>(null);
+  const [receipt, setReceipt] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-
-    if (!formData.firstName.trim() || !formData.lastName.trim() || !formData.phone.trim()) {
-      setErrorMessage('Please provide your full name and valid phone number.');
-      return;
-    }
-
-    if (!formData.reason.trim()) {
-      setErrorMessage('Please describe the reason for your visit so the clinical team can prepare.');
-      return;
-    }
-
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (isSubmitting) return;
     setIsSubmitting(true);
-
-    setTimeout(() => {
-      const clinician = db.users.find(u => u.id === formData.clinicianId) || db.users[1];
-      const fullName = `${formData.firstName.trim()} ${formData.lastName.trim()}`;
-
-      // Check if patient already exists by phone
-      const existingPatient = db.patients.find(p => p.phone.replace(/[^0-9]/g, '').endsWith(formData.phone.replace(/[^0-9]/g, '')));
-      const patientId = existingPatient ? existingPatient.id : `PAT-REG-${Date.now().toString().slice(-4)}`;
-
-      const newAppointment: Appointment = {
-        id: `APT-${Date.now().toString().slice(-5)}`,
-        patientId,
-        patientName: fullName,
-        patientPhone: formData.phone,
-        patientEmail: formData.email,
-        department: formData.department,
-        clinicianId: clinician.id,
-        clinicianName: clinician.fullName,
-        date: formData.date,
-        timeSlot: formData.timeSlot,
-        reason: formData.reason,
-        type: 'OUTPATIENT_CONSULT',
-        status: 'CONFIRMED',
-        bookedVia: 'PUBLIC_PORTAL',
-        createdAt: new Date().toISOString(),
-      };
-
-      updateDatabaseState(draft => {
-        draft.appointments.unshift(newAppointment);
+    setErrorMessage('');
+    try {
+      const fields = Object.fromEntries(Object.entries(formData).map(([key, value]) => [key, value.trim()]));
+      const response = await fetch('/api/registry/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...fields, id: requestId }),
       });
-
-      logAuditEvent({
-        userId: 'PUBLIC_PATIENT',
-        userName: fullName,
-        userRole: 'patient',
-        action: 'CREATE',
-        module: 'OPD',
-        patientId,
-        details: `Public online appointment booked for ${formData.date} at ${formData.timeSlot} with ${clinician.fullName}.`,
-        ipAddress: 'Patient Web Portal Client',
-        status: 'SUCCESS',
-      });
-
+      if (response.status !== 202) {
+        throw new Error(response.status === 400
+          ? 'Check your contact details, department, and preferred date before trying again.'
+          : 'The request could not be saved. Please try again.');
+      }
+      const result = await response.json();
+      setReceipt(result.id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'The request could not be saved.');
+    } finally {
       setIsSubmitting(false);
-      setConfirmedAppointment(newAppointment);
-      onSuccess(newAppointment);
-    }, 400);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden my-8">
+      <div role="dialog" aria-modal="true" aria-labelledby="appointment-heading" className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden my-8">
         {/* Header */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-base">Book Clinical Consultation</h3>
+            <h3 id="appointment-heading" className="font-bold text-base">Request a clinical consultation</h3>
             <p className="text-xs text-slate-400">J & J Memorial Outpatient Appointment Scheduling</p>
           </div>
           <button
-            onClick={onClose}
+            type="button" aria-label="Close appointment form" disabled={isSubmitting} onClick={onClose}
             className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {confirmedAppointment ? (
-          <div className="p-8 text-center space-y-4">
+        {receipt ? (
+          <div className="p-8 text-center space-y-4" role="status">
             <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-8 h-8" />
             </div>
-            <h4 className="text-xl font-bold text-slate-900">Appointment Confirmed!</h4>
-            <p className="text-sm text-slate-600 max-w-md mx-auto">
-              Your appointment token is <span className="font-mono font-bold text-teal-800">{confirmedAppointment.id}</span>.
-              A confirmation SMS has been prepared for <span className="font-semibold">{confirmedAppointment.patientPhone}</span>.
-            </p>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left text-xs space-y-2 max-w-md mx-auto">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Patient:</span>
-                <span className="font-semibold text-slate-900">{confirmedAppointment.patientName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Physician:</span>
-                <span className="font-semibold text-slate-900">{confirmedAppointment.clinicianName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Date & Slot:</span>
-                <span className="font-semibold text-teal-800">{confirmedAppointment.date} at {confirmedAppointment.timeSlot}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Department:</span>
-                <span className="font-semibold text-slate-900">{confirmedAppointment.department}</span>
-              </div>
-            </div>
+            <h4 className="text-xl font-bold text-slate-900">Appointment request received</h4>
+            <p className="text-sm text-slate-600">The requested time is pending scheduling review.</p>
+            <p className="break-all text-sm">Reference <strong className="font-mono text-teal-800">{receipt}</strong></p>
 
             <div className="pt-4 flex justify-center gap-3">
               <button
@@ -172,8 +97,9 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <p className="text-sm text-slate-700">Staging form. Enter synthetic details only.</p>
             {errorMessage && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-lg flex items-center gap-2">
+              <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-lg flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{errorMessage}</span>
               </div>
@@ -181,22 +107,22 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">First Name *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-firstName">First Name *</label>
                 <input
                   type="text"
                   required
-                  value={formData.firstName}
+                  id="appointment-firstName" value={formData.firstName}
                   onChange={e => setFormData({ ...formData, firstName: e.target.value })}
                   placeholder="e.g. Blessing"
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Last Name *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-lastName">Last Name *</label>
                 <input
                   type="text"
                   required
-                  value={formData.lastName}
+                  id="appointment-lastName" value={formData.lastName}
                   onChange={e => setFormData({ ...formData, lastName: e.target.value })}
                   placeholder="e.g. Kpadeh"
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden"
@@ -206,21 +132,21 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number (Liberia) *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-phone">Phone Number (Liberia) *</label>
                 <input
                   type="tel"
                   required
-                  value={formData.phone}
+                  id="appointment-phone" value={formData.phone}
                   onChange={e => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+231-770-xxx-xxx"
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Email (Optional)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-email">Email (Optional)</label>
                 <input
                   type="email"
-                  value={formData.email}
+                  id="appointment-email" value={formData.email}
                   onChange={e => setFormData({ ...formData, email: e.target.value })}
                   placeholder="patient@example.com"
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden"
@@ -230,9 +156,9 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-department">Department</label>
                 <select
-                  value={formData.department}
+                  id="appointment-department" value={formData.department}
                   onChange={e => setFormData({ ...formData, department: e.target.value })}
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden bg-white"
                 >
@@ -244,12 +170,13 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Preferred Clinician</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-clinicianId">Preferred Clinician</label>
                 <select
-                  value={formData.clinicianId}
+                  id="appointment-clinicianId" value={formData.clinicianId}
                   onChange={e => setFormData({ ...formData, clinicianId: e.target.value })}
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden bg-white"
                 >
+                  <option value="">No preference</option>
                   <option value="USR-002">Dr. Evelyn Sirleaf-Gbotoe, MD (OPD/Emergency)</option>
                   <option value="USR-001">Dr. J. Saydee Kollie, MD, FWACP (Medical Director)</option>
                 </select>
@@ -258,18 +185,18 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Appointment Date</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-date">Appointment Date</label>
                 <input
-                  type="date"
-                  value={formData.date}
+                  type="date" required min={new Date().toISOString().slice(0, 10)}
+                  id="appointment-date" value={formData.date}
                   onChange={e => setFormData({ ...formData, date: e.target.value })}
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Time Slot</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-timeSlot">Time Slot</label>
                 <select
-                  value={formData.timeSlot}
+                  id="appointment-timeSlot" value={formData.timeSlot}
                   onChange={e => setFormData({ ...formData, timeSlot: e.target.value })}
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden bg-white"
                 >
@@ -283,13 +210,13 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Reason for Visit / Chief Symptoms *</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="appointment-reason">Reason for Visit / Chief Symptoms *</label>
               <textarea
                 required
-                rows={3}
-                value={formData.reason}
+                rows={3} maxLength={500}
+                id="appointment-reason" value={formData.reason}
                 onChange={e => setFormData({ ...formData, reason: e.target.value })}
-                placeholder="Briefly state symptoms, duration, and any existing medical conditions..."
+                placeholder="Enter a short synthetic reason for the visit."
                 className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-teal-600 focus:outline-hidden"
               />
             </div>
@@ -297,6 +224,7 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
             <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-200">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={onClose}
                 className="text-xs text-slate-600 hover:text-slate-900 px-4 py-2 cursor-pointer"
               >
@@ -308,11 +236,11 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
                 className="bg-teal-800 hover:bg-teal-900 disabled:opacity-50 text-white font-medium text-xs px-5 py-2.5 rounded-lg transition-colors cursor-pointer flex items-center gap-2"
               >
                 {isSubmitting ? (
-                  <span>Checking Availability...</span>
+                  <span>Saving request…</span>
                 ) : (
                   <>
                     <Calendar className="w-3.5 h-3.5" />
-                    <span>Confirm Booking</span>
+                    <span>Submit appointment request</span>
                   </>
                 )}
               </button>

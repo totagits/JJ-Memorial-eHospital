@@ -3,6 +3,12 @@ import React, { useEffect, useState } from 'react';
 type Staff = { username: string; role: 'registrar' | 'viewer' | 'restricted' };
 type Patient = { mrn: string; firstName: string; lastName: string; birthDate: string };
 
+type AppointmentRequest = {
+  id: string; firstName: string; lastName: string; phone: string; email: string | null;
+  department: string; clinicianId: string | null; date: string; timeSlot: string; reason: string;
+  patientMrn: string | null; status: 'pending' | 'contacted';
+};
+
 async function request<T>(route: string, body?: Record<string, string>): Promise<T> {
   const response = await fetch('/api/registry' + route, {
     cache: 'no-store',
@@ -13,11 +19,77 @@ async function request<T>(route: string, body?: Record<string, string>): Promise
       400: 'Check the submitted details and try again.',
       401: 'Sign in with a valid staging staff account.',
       403: 'Your staff role cannot perform this action.',
-      404: 'No patient was found with that medical record number.',
+      404: 'The requested record could not be found.',
+      409: 'This request is already closed. Refresh the queue.',
     };
     throw new Error(messages[response.status] ?? 'The registry is temporarily unavailable.');
   }
   return response.status === 204 ? undefined as T : response.json();
+}
+
+function AppointmentQueue() {
+  const [items, setItems] = useState<AppointmentRequest[] | null>(null);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function update(action?: () => Promise<void>) {
+    setBusy(true);
+    setMessage('');
+    try {
+      if (action) await action();
+      setItems(await request<AppointmentRequest[]>('/appointments'));
+      if (action) setMessage('Request updated.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The queue is unavailable.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5 sm:col-span-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold">Appointment requests</h2>
+        <button type="button" disabled={busy} className="min-h-11 rounded-md border border-slate-400 px-4" onClick={() => void update()}>
+          {items ? 'Refresh queue' : 'Load queue'}
+        </button>
+      </div>
+      <p role="status" className="mt-2">{message}</p>
+      {items?.length === 0 && <p className="mt-3">No open requests.</p>}
+      {items && items.length > 0 && <ul className="mt-4 space-y-4">
+        {items.map(item => (
+          <li key={item.id} className="rounded-md border border-slate-200 p-4">
+            <h3 className="font-semibold">{item.firstName} {item.lastName}</h3>
+            <p>{item.department} | {item.date} at {item.timeSlot} | {item.status}</p>
+            <p>Preferred clinician {item.clinicianId === 'USR-001' ? 'Dr. J. Saydee Kollie' : item.clinicianId === 'USR-002' ? 'Dr. Evelyn Sirleaf-Gbotoe' : 'None'}</p>
+            <p className="break-words">{item.phone}{item.email && ' | ' + item.email}</p>
+            <p className="break-words">{item.reason}</p>
+            <p className="break-all text-xs text-slate-600">Reference {item.id}</p>
+            <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={event => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              void update(() => request('/appointments/' + item.id + '/review', {
+                patientMrn: String(data.get('patientMrn')).trim(),
+                status: String(data.get('status')),
+              }));
+            }}>
+              <label>Patient MRN (optional)
+                <input name="patientMrn" key={item.patientMrn ?? ''} defaultValue={item.patientMrn ?? ''} maxLength={36}
+                  className="mt-1 block min-h-11 rounded-md border border-slate-400 px-2" />
+              </label>
+              <label>Disposition
+                <select name="status" className="mt-1 block min-h-11 rounded-md border border-slate-400 px-2">
+                  <option value="contacted">Contacted</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </label>
+              <button disabled={busy} className="min-h-11 rounded-md bg-teal-800 px-4 font-semibold text-white disabled:opacity-50">Save review</button>
+            </form>
+          </li>
+        ))}
+      </ul>}
+    </section>
+  );
 }
 
 export function PatientRegistryPage() {
@@ -111,6 +183,7 @@ export function PatientRegistryPage() {
               <label className="block">Medical record number<input className={input} name="mrn" required maxLength={36} /></label>
               <button className={button} disabled={busy}>Find patient</button>
             </form>
+            {staff.role === 'registrar' && <AppointmentQueue />}
             {patient && (
               <section className="rounded-lg border border-teal-200 bg-white p-5 sm:col-span-2">
                 <h2 className="text-xl font-semibold">{patient.firstName} {patient.lastName}</h2>

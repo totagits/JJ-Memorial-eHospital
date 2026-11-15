@@ -16,7 +16,7 @@ const DemoStaffWorkspace = demoEnabled && lazy(() => import('./components/staff/
 const DemoPatientPortal = demoEnabled && lazy(() => import('./components/public/PatientPortalView').then(
   module => ({ default: module.PatientPortalView }),
 ));
-const DemoBooking = demoEnabled && lazy(() => import('./components/public/AppointmentBookingModal').then(
+const AppointmentBooking = lazy(() => import('./components/public/AppointmentBookingModal').then(
   module => ({ default: module.AppointmentBookingModal }),
 ));
 
@@ -37,11 +37,6 @@ function HospitalApp() {
   };
 
   const handleOpenAppointmentModal = (clinicianId?: string, department?: string) => {
-    if (!demoEnabled) {
-      setPublicTab('contact');
-      window.scrollTo({ top: 0 });
-      return;
-    }
     setSelectedClinicianId(clinicianId);
     setSelectedDepartment(department);
     setIsAppointmentModalOpen(true);
@@ -129,7 +124,7 @@ function HospitalApp() {
           />
 
           {/* Patient Online Appointment Booking Flow */}
-          {DemoBooking && <DemoBooking
+          {isAppointmentModalOpen && <AppointmentBooking
             isOpen={isAppointmentModalOpen}
             onClose={() => {
               setIsAppointmentModalOpen(false);
@@ -138,9 +133,6 @@ function HospitalApp() {
             }}
             initialClinicianId={selectedClinicianId}
             initialDepartment={selectedDepartment}
-            onSuccess={apt => {
-              // Successfully booked
-            }}
           />}
         </>
       )}
