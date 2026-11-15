@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   HeartPulse, 
   Stethoscope, 
@@ -7,10 +7,11 @@ import {
   Microscope, 
   Pill, 
   Users, 
-  Activity, 
   Award, 
   Zap, 
-  PhoneCall, 
+  MapPin,
+  Pause,
+  Play,
   Calendar, 
   ArrowRight,
   Baby,
@@ -33,117 +34,99 @@ interface HomePageProps {
 export const HomePage: React.FC<HomePageProps> = ({
   onNavigate,
   onOpenAppointmentModal,
-  onSwitchToStaff
 }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [hasPlayed, setHasPlayed] = useState(false);
+  const [videoUnavailable, setVideoUnavailable] = useState(false);
+
+  useEffect(() => {
+    const desktopMotion = window.matchMedia('(min-width: 1024px) and (prefers-reduced-motion: no-preference)');
+    const connection = (navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }).connection;
+    const constrainedConnection = connection?.saveData || ['slow-2g', '2g', '3g'].includes(connection?.effectiveType ?? '');
+    const video = videoRef.current;
+    if (desktopMotion.matches && !constrainedConnection) {
+      void video?.play().catch(() => undefined);
+    }
+    const pauseWhenMotionDisabled = () => {
+      if (!desktopMotion.matches) video?.pause();
+    };
+    desktopMotion.addEventListener('change', pauseWhenMotionDisabled);
+    return () => desktopMotion.removeEventListener('change', pauseWhenMotionDisabled);
+  }, []);
+
+  const toggleVideo = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      void video.play().catch(() => setVideoUnavailable(true));
+    } else {
+      video.pause();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-teal-950 text-white overflow-hidden py-16 md:py-24">
-        {/* Subtle grid background */}
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#2dd4bf_1px,transparent_1px)] [background-size:16px_16px]" />
-
-        <div className="relative max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          <div className="lg:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold text-teal-300 bg-teal-950/80 border border-teal-700/50 px-3 py-1.5 rounded-full">
-              <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
-              <span>Full-Service e-Hospital & Advanced Clinical Center · Monrovia</span>
-            </div>
-
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight text-white">
-              Connected Care, <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 via-cyan-200 to-emerald-300">
-                Intelligent Operations.
+      <section className="overflow-hidden bg-slate-950 text-white">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_1.35fr] lg:items-center lg:gap-12 lg:py-16">
+          <div className="relative aspect-video overflow-hidden rounded-2xl bg-slate-800 ring-1 ring-white/15 shadow-2xl lg:order-2">
+            <video
+              ref={videoRef}
+              src="/media/jjmemorial-facility.mp4"
+              poster="/media/jjmemorial-exterior.webp"
+              className="h-full w-full object-cover"
+              preload="none"
+              muted
+              loop
+              playsInline
+              aria-label="J & J Memorial facility preview"
+              onPlaying={() => {
+                setPlaying(true);
+                setHasPlayed(true);
+              }}
+              onPause={() => setPlaying(false)}
+              onError={() => setVideoUnavailable(true)}
+            />
+            {videoUnavailable ? (
+              <span className="absolute bottom-3 right-3 rounded-lg bg-slate-950/90 px-3 py-2 text-sm">
+                Video unavailable
               </span>
-            </h1>
-
-            <p className="text-slate-300 text-base sm:text-lg leading-relaxed max-w-2xl">
-              J & J Memorial combines certified medical specialists with modern digital health records, diagnostic precision, 24/7 power resilience, and seamless patient care from outpatient consultation to recovery.
-            </p>
-
-            <div className="flex flex-wrap items-center gap-4 pt-2">
+            ) : (
               <button
-                onClick={onOpenAppointmentModal}
-                className="inline-flex items-center gap-2.5 bg-teal-600 hover:bg-teal-500 text-white font-semibold text-sm px-6 py-3 rounded-lg shadow-md transition-all cursor-pointer"
+                type="button"
+                onClick={toggleVideo}
+                className="absolute bottom-3 right-3 inline-flex min-h-11 items-center gap-2 rounded-lg bg-slate-950/90 px-4 text-sm font-semibold text-white ring-1 ring-white/30 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
-                <Calendar className="w-4 h-4" />
-                <span>Book Doctor Appointment</span>
+                {playing ? <Pause aria-hidden="true" size={17} /> : <Play aria-hidden="true" size={17} />}
+                {playing ? 'Pause video' : hasPlayed ? 'Resume video' : 'Watch video'}
               </button>
-
-              <button
-                onClick={() => onNavigate('portal')}
-                className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 font-semibold text-sm px-5 py-3 rounded-lg transition-colors cursor-pointer"
-              >
-                <FileText className="w-4 h-4 text-teal-400" />
-                <span>Patient Portal Login</span>
-              </button>
-
-              <button
-                onClick={() => onNavigate('doctors')}
-                className="inline-flex items-center gap-1.5 text-slate-300 hover:text-white text-sm font-medium px-3 py-2 cursor-pointer"
-              >
-                <span>Find a Doctor</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Emergency Ribbon */}
-            <div className="pt-4 border-t border-slate-800/80 flex flex-wrap items-center gap-6 text-xs text-slate-400">
-              <div className="flex items-center gap-2 text-rose-300 font-medium">
-                <PhoneCall className="w-4 h-4 text-rose-400" />
-                <span>24/7 Acute Triage: +231 (0) 770-JJ-MEM</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Zap className="w-4 h-4 text-amber-400" />
-                <span>Uninterrupted Power: 500kVA Cummins + Solar Grid</span>
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* Quick Hospital Snapshot Card */}
-          <div className="lg:col-span-5">
-            <div className="bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-700/80 p-6 shadow-xl space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                <div>
-                  <h3 className="font-bold text-white text-base">Hospital Operational Status</h3>
-                  <p className="text-xs text-slate-400">Live Clinical & Facility Monitoring</p>
-                </div>
-                <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-950/80 border border-emerald-800/60 px-2.5 py-1 rounded-full font-medium">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  All Services Active
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/50">
-                  <span className="text-xs text-slate-400 block mb-1">Outpatient Clinics</span>
-                  <span className="text-lg font-bold text-white">Open</span>
-                  <span className="text-[11px] text-teal-300 block mt-0.5">Average wait &lt; 15 mins</span>
-                </div>
-                <div className="bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/50">
-                  <span className="text-xs text-slate-400 block mb-1">Emergency Department</span>
-                  <span className="text-lg font-bold text-emerald-400">24/7 Active</span>
-                  <span className="text-[11px] text-slate-400 block mt-0.5">Triage nurses on station</span>
-                </div>
-                <div className="bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/50">
-                  <span className="text-xs text-slate-400 block mb-1">Diagnostic Laboratory</span>
-                  <span className="text-lg font-bold text-white">Full Panels</span>
-                  <span className="text-[11px] text-teal-300 block mt-0.5">Automated 5-part hematology</span>
-                </div>
-                <div className="bg-slate-800/60 rounded-xl p-3.5 border border-slate-700/50">
-                  <span className="text-xs text-slate-400 block mb-1">Pharmacy Dispensary</span>
-                  <span className="text-lg font-bold text-white">FEFO Stocked</span>
-                  <span className="text-[11px] text-teal-300 block mt-0.5">Quality verified drugs</span>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  onClick={onOpenAppointmentModal}
-                  className="w-full text-center bg-teal-700 hover:bg-teal-600 text-white font-medium text-xs py-2.5 rounded-lg transition-colors cursor-pointer"
-                >
-                  Request Consultation Slot
-                </button>
-              </div>
+          <div className="lg:order-1">
+            <p className="mb-4 text-sm font-semibold text-teal-300">VOA East Community, Monrovia</p>
+            <h1 className="max-w-xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
+              J &amp; J Memorial Health Center
+            </h1>
+            <p className="mt-5 max-w-md text-base leading-relaxed text-slate-300 sm:text-lg">
+              Find care, book an appointment, or plan your visit.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={onOpenAppointmentModal}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-teal-700 px-5 py-3 text-sm font-semibold hover:bg-teal-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                <Calendar aria-hidden="true" size={17} /> Book an appointment
+              </button>
+              <a
+                href="#locations"
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-500 px-5 py-3 text-sm font-semibold hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                <MapPin aria-hidden="true" size={17} /> Get directions
+              </a>
             </div>
           </div>
         </div>
