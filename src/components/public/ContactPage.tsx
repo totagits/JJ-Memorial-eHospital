@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { MapPin, Phone, Mail, Clock, Send, CheckCircle2, ShieldAlert } from 'lucide-react';
 
-export const ContactPage: React.FC = () => {
+export const ContactPage: React.FC<{ demoEnabled?: boolean }> = ({ demoEnabled = false }) => {
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -88,13 +88,18 @@ export const ContactPage: React.FC = () => {
             <div className="bg-rose-50 border border-rose-200 rounded-2xl p-5 text-xs text-rose-900 flex items-start gap-3">
               <ShieldAlert className="w-5 h-5 text-rose-700 shrink-0 mt-0.5" />
               <p className="leading-relaxed">
-                <span className="font-bold">Acute Trauma / Chest Pain / Labor:</span> Do not use this contact form for immediate life-threatening situations. Call the emergency line or proceed directly to our 24/7 emergency entrance.
+                <span className="font-bold">Acute Trauma / Chest Pain / Labor:</span> For immediate life-threatening situations, call the emergency line or proceed directly to our 24/7 emergency entrance.
               </p>
             </div>
           </div>
 
-          {/* Inquiry Form */}
           <div className="lg:col-span-7">
+            {!demoEnabled ? (
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+                <h3 className="text-base font-bold text-slate-900">Appointments and inquiries</h3>
+                <p className="mt-2 text-sm text-slate-700">Call the reception desk using the number on this page to ask about appointments or services.</p>
+              </section>
+            ) : (
             <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs">
               <h3 className="text-base font-bold text-slate-900 mb-2">Send an Administrative or Clinical Inquiry</h3>
               <p className="text-xs text-slate-500 mb-6">Our patient liaison team responds within 2-4 business hours.</p>
@@ -193,6 +198,7 @@ export const ContactPage: React.FC = () => {
                 </form>
               )}
             </div>
+            )}
           </div>
         </div>
       </div>

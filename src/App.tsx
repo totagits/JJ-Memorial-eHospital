@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { PublicHeader } from './components/public/PublicHeader';
 import { PublicFooter } from './components/public/PublicFooter';
 import { HomePage } from './components/public/HomePage';
@@ -6,15 +6,19 @@ import { AboutPage } from './components/public/AboutPage';
 import { ServicesPage } from './components/public/ServicesPage';
 import { DoctorsPage } from './components/public/DoctorsPage';
 import { StaffDirectoryPage } from './components/public/StaffDirectoryPage';
-import { PatientPortalView } from './components/public/PatientPortalView';
 import { HealthResourcesPage } from './components/public/HealthResourcesPage';
 import { ContactPage } from './components/public/ContactPage';
-import { AppointmentBookingModal } from './components/public/AppointmentBookingModal';
 import { PatientRegistryPage } from './components/staff/PatientRegistryPage';
-import { StaffWorkspace } from './components/staff/StaffWorkspace';
-import { subscribeDatabase, getDatabaseState } from './services/storageService';
 import { I18nProvider } from './services/i18nService';
-import { useRBAC } from './hooks/useRBAC';
+
+const demoEnabled = import.meta.env.VITE_ENABLE_DEMO_WORKFLOWS === 'true';
+const DemoStaffWorkspace = demoEnabled && lazy(() => import('./components/staff/DemoWorkspace'));
+const DemoPatientPortal = demoEnabled && lazy(() => import('./components/public/PatientPortalView').then(
+  module => ({ default: module.PatientPortalView }),
+));
+const DemoBooking = demoEnabled && lazy(() => import('./components/public/AppointmentBookingModal').then(
+  module => ({ default: module.AppointmentBookingModal }),
+));
 
 export default function App() {
   return /^\/staff\/registry\/?$/.test(window.location.pathname) ? <PatientRegistryPage /> : <HospitalApp />;
@@ -26,29 +30,30 @@ function HospitalApp() {
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [selectedClinicianId, setSelectedClinicianId] = useState<string | undefined>(undefined);
   const [selectedDepartment, setSelectedDepartment] = useState<string | undefined>(undefined);
-  const { currentUser, switchUser } = useRBAC();
+
+  const openStaff = () => {
+    if (demoEnabled) setViewMode('staff');
+    else window.location.assign('/staff/registry');
+  };
 
   const handleOpenAppointmentModal = (clinicianId?: string, department?: string) => {
+    if (!demoEnabled) {
+      setPublicTab('contact');
+      window.scrollTo({ top: 0 });
+      return;
+    }
     setSelectedClinicianId(clinicianId);
     setSelectedDepartment(department);
     setIsAppointmentModalOpen(true);
   };
-
-  // Synchronize state with persistent database changes
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const unsubscribe = subscribeDatabase(() => {
-      setTick(t => t + 1);
-    });
-    return () => unsubscribe();
-  }, []);
 
   // Global keyboard shortcuts (Alt+S to toggle staff workspace, Alt+P for portal)
   useEffect(() => {
     const handleGlobalKey = (e: KeyboardEvent) => {
       if (e.altKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        setViewMode(v => (v === 'public' ? 'staff' : 'public'));
+        if (demoEnabled) setViewMode(v => (v === 'public' ? 'staff' : 'public'));
+        else openStaff();
       } else if (e.altKey && e.key.toLowerCase() === 'p') {
         e.preventDefault();
         setViewMode('public');
@@ -63,7 +68,7 @@ function HospitalApp() {
   useEffect(() => {
     const hash = window.location.hash.toLowerCase();
     if (hash === '#staff') {
-      setViewMode('staff');
+      openStaff();
     } else if (hash === '#portal') {
       setViewMode('public');
       setPublicTab('portal');
@@ -72,11 +77,10 @@ function HospitalApp() {
 
   return (
     <I18nProvider>
+      <Suspense fallback={<p role="status" className="p-6">Loading workspace…</p>}>
       <div className="min-h-screen flex flex-col font-sans text-slate-900 bg-slate-50 selection:bg-teal-500/20 selection:text-teal-900">
-        {viewMode === 'staff' ? (
-          <StaffWorkspace
-            currentUser={currentUser}
-            onUserChange={switchUser}
+        {viewMode === 'staff' && DemoStaffWorkspace ? (
+          <DemoStaffWorkspace
             onBackToPublicSite={() => setViewMode('public')}
           />
         ) : (
@@ -87,8 +91,8 @@ function HospitalApp() {
               setPublicTab(tab);
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            onOpenAppointmentModal={() => setIsAppointmentModalOpen(true)}
-            onSwitchToStaff={() => setViewMode('staff')}
+            onOpenAppointmentModal={() => handleOpenAppointmentModal()}
+            onSwitchToStaff={openStaff}
           />
 
           <main className="flex-1">
@@ -99,7 +103,7 @@ function HospitalApp() {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 onOpenAppointmentModal={() => handleOpenAppointmentModal()}
-                onSwitchToStaff={() => setViewMode('staff')}
+                onSwitchToStaff={openStaff}
               />
             )}
             {publicTab === 'about' && <AboutPage />}
@@ -113,7 +117,7 @@ function HospitalApp() {
               <PatientPortalView onOpenAppointmentModal={() => handleOpenAppointmentModal()} />
             )}
             {publicTab === 'health' && <HealthResourcesPage />}
-            {publicTab === 'contact' && <ContactPage />}
+            {publicTab === 'contact' && <ContactPage demoEnabled={demoEnabled} />}
           </main>
 
           <PublicFooter
@@ -121,11 +125,11 @@ function HospitalApp() {
               setPublicTab(tab);
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            onSwitchToStaff={() => setViewMode('staff')}
+            onSwitchToStaff={openStaff}
           />
 
           {/* Patient Online Appointment Booking Flow */}
-          <AppointmentBookingModal
+          {DemoBooking && <DemoBooking
             isOpen={isAppointmentModalOpen}
             onClose={() => {
               setIsAppointmentModalOpen(false);
@@ -137,10 +141,11 @@ function HospitalApp() {
             onSuccess={apt => {
               // Successfully booked
             }}
-          />
+          />}
         </>
       )}
     </div>
+      </Suspense>
   </I18nProvider>
   );
 }
