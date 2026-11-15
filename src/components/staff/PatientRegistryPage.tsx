@@ -12,6 +12,7 @@ type AppointmentRequest = {
 type ScheduleSlot = {
   id: string; clinicianId: string; startsAt: string; visitId: string | null;
   status: 'scheduled' | 'waiting_for_triage' | 'triaged' | 'completed' | null;
+  notificationStatus: 'pending' | 'sent' | 'failed' | null;
   patientMrn: string | null; firstName: string | null; lastName: string | null;
 };
 
@@ -108,6 +109,7 @@ function AppointmentQueue() {
               <p>{slot.status === 'waiting_for_triage' ? 'Waiting for triage' : slot.status === 'completed' ? 'Visit completed' : slot.status === 'triaged' ? 'Triage recorded' : slot.visitId ? 'Scheduled' : 'Open'}
                 {slot.firstName && ' | ' + slot.firstName + ' ' + slot.lastName}
               </p>
+              {slot.notificationStatus && <p className="text-sm">SMS delivery: {slot.notificationStatus}</p>}
               {slot.patientMrn && <p className="break-all text-xs text-slate-600">MRN {slot.patientMrn}</p>}
             </div>
             {slot.status === 'scheduled' && <button type="button" disabled={busy} className={scheduleButton}

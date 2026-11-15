@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -42,6 +42,21 @@ export async function migrateRegistry(database) {
       await client.query('INSERT INTO registry_migrations VALUES ($1)', [version]);
     }
   });
+}
+
+const staffPermissions = new Map([
+  ['registrar', new Set(['patients:read', 'patients:create', 'appointments:manage', 'schedule:manage'])],
+  ['viewer', new Set(['patients:read'])],
+  ['triage', new Set(['triage:manage'])],
+  ['clinician', new Set(['encounters:assigned'])],
+  ['restricted', new Set()],
+]);
+
+function requirePermission(permission) {
+  return (_req, res, next) => {
+    if (!staffPermissions.get(res.locals.staff?.role)?.has(permission)) return res.sendStatus(403);
+    next();
+  };
 }
 
 export function registryRoutes(database, origin) {
@@ -120,9 +135,8 @@ export function registryRoutes(database, origin) {
     res.clearCookie(cookie, cookieOptions).sendStatus(204);
   }));
 
-  router.post('/patients', route(async (req, res) => {
-    const { username, role } = res.locals.staff;
-    if (role !== 'registrar') return res.sendStatus(403);
+  router.post('/patients', requirePermission('patients:create'), route(async (req, res) => {
+    const { username } = res.locals.staff;
     const { firstName, lastName, birthDate } = req.body ?? {};
     if (![firstName, lastName].every(name => typeof name === 'string' && name.trim().length > 0 && name.trim().length <= 80) ||
         typeof birthDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return res.sendStatus(400);
@@ -140,9 +154,8 @@ export function registryRoutes(database, origin) {
     });
     res.status(201).json(patient);
   }));
-  router.get('/patients/:mrn', route(async (req, res) => {
-    const { username, role } = res.locals.staff;
-    if (role !== 'registrar' && role !== 'viewer') return res.sendStatus(403);
+  router.get('/patients/:mrn', requirePermission('patients:read'), route(async (req, res) => {
+    const { username } = res.locals.staff;
     if (!uuid.test(req.params.mrn)) return res.sendStatus(400);
     const patient = await transaction(database, async client => {
       const { rows: [record] } = await client.query(
@@ -155,8 +168,7 @@ export function registryRoutes(database, origin) {
     if (!patient) return res.sendStatus(404);
     res.json(patient);
   }));
-  router.get('/appointments', route(async (_req, res) => {
-    if (res.locals.staff.role !== 'registrar') return res.sendStatus(403);
+  router.get('/appointments', requirePermission('appointments:manage'), route(async (_req, res) => {
     const { rows } = await database.query(
       `SELECT id, first_name AS "firstName", last_name AS "lastName", phone, email, department, clinician_id AS "clinicianId",
         requested_date::text AS date, requested_time AS "timeSlot", reason, patient_mrn AS "patientMrn", status
@@ -166,9 +178,8 @@ export function registryRoutes(database, origin) {
     );
     res.json(rows);
   }));
-  router.post('/appointments/:id/review', route(async (req, res) => {
-    const { username, role } = res.locals.staff;
-    if (role !== 'registrar') return res.sendStatus(403);
+  router.post('/appointments/:id/review', requirePermission('appointments:manage'), route(async (req, res) => {
+    const { username } = res.locals.staff;
     const { id } = req.params;
     const { status, patientMrn } = req.body ?? {};
     if (!uuid.test(id) || !['contacted', 'closed'].includes(status) ||
@@ -191,18 +202,16 @@ export function registryRoutes(database, origin) {
     });
     res.sendStatus(result);
   }));
-  router.use('/schedule', (_req, res, next) => {
-    if (res.locals.staff.role !== 'registrar') return res.sendStatus(403);
-    next();
-  });
+  router.use('/schedule', requirePermission('schedule:manage'));
 
   router.get('/schedule', route(async (_req, res) => {
     const { rows } = await database.query(
       `SELECT s.id, s.clinician_id AS "clinicianId", s.starts_at AS "startsAt",
         v.id AS "visitId", v.status, v.patient_mrn AS "patientMrn",
-        p.first_name AS "firstName", p.last_name AS "lastName"
+        p.first_name AS "firstName", p.last_name AS "lastName", n.delivery_status AS "notificationStatus"
        FROM clinician_slots s LEFT JOIN scheduled_visits v ON s.id=v.slot_id
        LEFT JOIN registry_patients p ON p.mrn=v.patient_mrn
+       LEFT JOIN patient_notification_outbox n ON n.visit_id=v.id AND n.event_type='visit_scheduled' AND n.channel='sms'
        WHERE (v.id IS NULL AND s.starts_at>now()) OR v.id IS NOT NULL
        ORDER BY CASE WHEN v.status='waiting_for_triage' THEN 0 ELSE 1 END, s.starts_at, s.id LIMIT 100`,
     );
@@ -241,11 +250,16 @@ export function registryRoutes(database, origin) {
       if (request.status !== 'contacted' || !request.patient_mrn) return 409;
       const slot = await client.query('SELECT 1 FROM clinician_slots WHERE id=$1 AND starts_at>now() FOR UPDATE', [slotId]);
       if (!slot.rowCount) return 409;
+      const visitId = randomUUID();
       const inserted = await client.query(
         'INSERT INTO scheduled_visits (id,request_id,slot_id,patient_mrn,scheduled_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
-        [randomUUID(), requestId, slotId, request.patient_mrn, username],
+        [visitId, requestId, slotId, request.patient_mrn, username],
       );
-      return inserted.rowCount ? 201 : 409;
+      if (!inserted.rowCount) return 409;
+      await client.query(
+        "INSERT INTO patient_notification_outbox (visit_id,event_type,channel) VALUES ($1,'visit_scheduled','sms')", [visitId],
+      );
+      return 201;
     });
     res.sendStatus(result);
   }));
@@ -260,10 +274,7 @@ export function registryRoutes(database, origin) {
     const existing = await database.query('SELECT 1 FROM scheduled_visits WHERE id=$1', [req.params.id]);
     res.sendStatus(existing.rowCount ? 204 : 404);
   }));
-  router.use('/triage', (_req, res, next) => {
-    if (res.locals.staff.role !== 'triage') return res.sendStatus(403);
-    next();
-  });
+  router.use('/triage', requirePermission('triage:manage'));
   router.get('/triage', route(async (_req, res) => {
     const { rows } = await database.query(
       `SELECT v.id, v.patient_mrn AS "patientMrn", p.first_name AS "firstName",
@@ -289,10 +300,7 @@ export function registryRoutes(database, origin) {
     });
     res.sendStatus(result);
   }));
-  router.use('/encounters', (_req, res, next) => {
-    if (res.locals.staff.role !== 'clinician') return res.sendStatus(403);
-    next();
-  });
+  router.use('/encounters', requirePermission('encounters:assigned'));
   router.get('/encounters', route(async (_req, res) => {
     const { rows } = await database.query(
       `SELECT v.id, v.patient_mrn AS "patientMrn", p.first_name AS "firstName",
