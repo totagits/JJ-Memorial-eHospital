@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -44,11 +44,20 @@ export async function migrateRegistry(database) {
   });
 }
 
+const departmentWork = new Map([
+  ['nurse', { department: 'nursing', from: 'pending', to: 'completed' }],
+  ['lab_technician', { department: 'lab', from: 'pending', to: 'recorded' }],
+  ['lab_reviewer', { department: 'lab', from: 'recorded', to: 'completed' }],
+  ['pharmacist', { department: 'pharmacy', from: 'pending', to: 'completed' }],
+]);
+const orderDepartments = ['nursing', 'lab', 'pharmacy'];
+
 const staffPermissions = new Map([
   ['registrar', new Set(['patients:read', 'patients:create', 'appointments:manage', 'schedule:manage'])],
   ['viewer', new Set(['patients:read'])],
   ['triage', new Set(['triage:manage'])],
   ['clinician', new Set(['encounters:assigned'])],
+  ...Array.from(departmentWork.keys(), role => [role, new Set(['department:work'])]),
   ['restricted', new Set()],
 ]);
 
@@ -341,6 +350,11 @@ export function registryRoutes(database, origin) {
   router.post('/encounters/:id/assessment', route(async (req, res) => {
     const { notes } = req.body ?? {};
     if (!uuid.test(req.params.id) || !maxText(notes, 2000) || !notes) return res.sendStatus(400);
+    const { orders = {} } = req.body ?? {};
+    if (!orders || typeof orders !== 'object' || Array.isArray(orders) ||
+        Object.entries(orders).some(([code, instruction]) => !orderDepartments.includes(code) || !maxText(instruction, 1500))) {
+      return res.sendStatus(400);
+    }
     const username = res.locals.staff.username;
     const result = await transaction(database, async client => {
       const { rows: [visit] } = await client.query(
@@ -358,7 +372,61 @@ export function registryRoutes(database, origin) {
       if (visit.status !== 'triaged') return 409;
       await client.query('INSERT INTO clinician_encounters (visit_id,notes,recorded_by) VALUES ($1,$2,$3)',
         [req.params.id, notes, username]);
+      for (const [department, instruction] of Object.entries(orders)) {
+        if (!instruction) continue;
+        await client.query(
+          'INSERT INTO department_work_items(id,visit_id,department_code,instruction) VALUES ($1,$2,$3,$4)',
+          [randomUUID(), req.params.id, department, instruction],
+        );
+      }
       await client.query("UPDATE scheduled_visits SET status='completed' WHERE id=$1", [req.params.id]);
+      return 201;
+    });
+    res.sendStatus(result);
+  }));
+  router.use('/department-work', requirePermission('department:work'));
+  router.get('/department-work', route(async (_req, res) => {
+    const { username, role } = res.locals.staff;
+    const { department, from } = departmentWork.get(role);
+    const params = [username, role, department, from];
+    const [{ rows: items }, { rows: [counts] }] = await Promise.all([
+      database.query(
+        `SELECT w.id,w.instruction,w.requested_at AS "requestedAt",v.patient_mrn AS "patientMrn",
+                p.first_name AS "firstName",p.last_name AS "lastName", e.notes AS "recordedNotes"
+         FROM department_work_items w
+         JOIN staff_department_memberships m ON m.department_code=w.department_code AND m.username=$1 AND m.role=$2
+         JOIN scheduled_visits v ON v.id=w.visit_id JOIN registry_patients p ON p.mrn=v.patient_mrn
+         LEFT JOIN department_work_events e ON e.work_id=w.id AND e.state='recorded'
+         WHERE w.department_code=$3 AND w.state=$4 ORDER BY w.requested_at,w.id LIMIT 50`, params),
+      database.query(
+        `SELECT count(*) FILTER (WHERE w.state=$4)::int AS waiting,
+                count(*) FILTER (WHERE w.state='completed')::int AS completed
+         FROM department_work_items w JOIN staff_department_memberships m
+          ON m.department_code=w.department_code AND m.username=$1 AND m.role=$2
+         WHERE w.department_code=$3`, params),
+    ]);
+    res.json({ items, counts });
+  }));
+
+  router.post('/department-work/:id/record', route(async (req, res) => {
+    const { notes } = req.body ?? {};
+    if (!uuid.test(req.params.id) || !maxText(notes, 1500) || !notes) return res.sendStatus(400);
+    const { username, role } = res.locals.staff;
+    const { department, from, to } = departmentWork.get(role);
+    const result = await transaction(database, async client => {
+      const { rows: [item] } = await client.query(
+        `SELECT w.state FROM department_work_items w
+         JOIN staff_department_memberships m ON m.department_code=w.department_code AND m.username=$1 AND m.role=$2
+         WHERE w.id=$3 AND w.department_code=$4 FOR UPDATE OF w,m`,
+        [username, role, req.params.id, department],
+      );
+      if (!item) return 404;
+      if (item.state !== from) return 409;
+      await client.query(
+        'INSERT INTO department_work_events(work_id,state,notes,actor) VALUES ($1,$2,$3,$4)',
+        [req.params.id, to, notes, username],
+      );
+      await client.query('UPDATE department_work_items SET state=$2 WHERE id=$1', [req.params.id, to]);
       return 201;
     });
     res.sendStatus(result);
