@@ -9,7 +9,6 @@ import {
   Users, 
   Award, 
   Zap, 
-  MapPin,
   Pause,
   Play,
   Calendar, 
@@ -69,14 +68,42 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <section className="overflow-hidden bg-slate-950 text-white">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_1.35fr] lg:items-center lg:gap-12 lg:py-16">
-          <div className="relative aspect-video overflow-hidden rounded-2xl bg-slate-800 ring-1 ring-white/15 shadow-2xl lg:order-2">
+      <section className="grid overflow-hidden bg-slate-950 text-white lg:min-h-[36rem] lg:grid-cols-[1fr_1fr]" aria-labelledby="home-hero-title">
+        <div className="flex items-center bg-gradient-to-br from-slate-950 via-slate-900 to-teal-950">
+          <div className="w-full px-5 py-12 sm:px-10 lg:py-16 lg:pl-[max(2.5rem,calc((100vw-84rem)/2))] lg:pr-8 xl:pr-12">
+            <p className="mb-5 text-sm font-semibold text-teal-300">
+              Full-Service e-Hospital &amp; Advanced Clinical Center · Monrovia
+            </p>
+            <h1 id="home-hero-title" className="text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-5xl xl:text-6xl">
+              Connected Care,<br />
+              <span className="text-teal-300">Intelligent Operations.</span>
+            </h1>
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-slate-200 sm:text-lg">
+              J &amp; J Memorial combines certified medical specialists with modern digital health records, diagnostic
+              precision, 24/7 power resilience, and seamless patient care from outpatient consultation to recovery.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <button type="button" onClick={onOpenAppointmentModal}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-teal-700 px-4 py-3 text-sm font-semibold hover:bg-teal-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                <Calendar aria-hidden="true" size={17} /> Book Doctor Appointment
+              </button>
+              <button type="button" onClick={() => onNavigate('portal')}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-500 px-4 py-3 text-sm font-semibold hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                <FileText aria-hidden="true" size={17} /> Patient Portal Login
+              </button>
+              <button type="button" onClick={() => onNavigate('doctors')}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 py-3 text-sm font-semibold hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                Find a Doctor <ArrowRight aria-hidden="true" size={17} />
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="relative aspect-video overflow-hidden bg-slate-800 lg:aspect-auto">
             <video
               ref={videoRef}
               src="/media/jjmemorial-facility.mp4"
               poster="/media/jjmemorial-exterior.webp"
-              className="h-full w-full object-cover"
+              className="absolute inset-0 h-full w-full object-cover"
               preload="none"
               muted
               loop
@@ -103,32 +130,6 @@ export const HomePage: React.FC<HomePageProps> = ({
                 {playing ? 'Pause video' : hasPlayed ? 'Resume video' : 'Watch video'}
               </button>
             )}
-          </div>
-
-          <div className="lg:order-1">
-            <p className="mb-4 text-sm font-semibold text-teal-300">VOA East Community, Monrovia</p>
-            <h1 className="max-w-xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-              J &amp; J Memorial Health Center
-            </h1>
-            <p className="mt-5 max-w-md text-base leading-relaxed text-slate-300 sm:text-lg">
-              Find care, book an appointment, or plan your visit.
-            </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={onOpenAppointmentModal}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-teal-700 px-5 py-3 text-sm font-semibold hover:bg-teal-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-              >
-                <Calendar aria-hidden="true" size={17} /> Book an appointment
-              </button>
-              <a
-                href="#locations"
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-500 px-5 py-3 text-sm font-semibold hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-              >
-                <MapPin aria-hidden="true" size={17} /> Get directions
-              </a>
-            </div>
-          </div>
         </div>
       </section>
 
