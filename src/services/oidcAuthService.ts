@@ -49,9 +49,10 @@ export interface OidcUserSession {
 const STORAGE_KEY_SESSION = 'jjm_oidc_staff_session';
 const OIDC_ISSUER = 'https://auth.jjmemorial.totag.network/oauth2/v1';
 const OIDC_AUDIENCE = 'jjm-hospital-workstation-app';
+const SYNTHETIC_DEMO_AUTH_ENABLED = import.meta.env.VITE_ENABLE_SYNTHETIC_DEMO_AUTH === 'true';
 
-// Mock password map for hospital-issued credentials
-// In this production-ready EMR, staff accounts have standardized enterprise credentials
+// Synthetic staging credentials only. Never add real staff credentials here.
+// Real staff accounts must use the server-backed PostgreSQL identity service.
 export const DEMO_CREDENTIALS: Record<string, { password: string; pin: string; title: string }> = {
   'dr.kollie': { password: 'Hospital2026!', pin: '1892', title: 'Medical Director' },
   'dr.sirleaf': { password: 'Hospital2026!', pin: '2410', title: 'Attending Physician (OPD)' },
@@ -151,6 +152,13 @@ class OidcAuthService {
     passwordAttempt: string,
     smartcardPin?: string
   ): Promise<{ success: boolean; session?: OidcUserSession; error?: string }> {
+    if (!SYNTHETIC_DEMO_AUTH_ENABLED) {
+      return {
+        success: false,
+        error: 'Staff sign-in is disabled until the server-backed identity service is configured for this environment.',
+      };
+    }
+
     const db = getDatabaseState();
     const cleanIdentifier = usernameOrEmail.trim().toLowerCase();
 
@@ -173,10 +181,23 @@ class OidcAuthService {
       return { success: false, error: 'Invalid hospital credentials. Account not found in active directory.' };
     }
 
-    // 2. Validate password
+    // 2. Validate synthetic staging credential. Fail closed for any user without an explicit demo credential.
     const credInfo = DEMO_CREDENTIALS[targetUser.username];
-    const expectedPassword = credInfo?.password || 'Hospital2026!';
-    if (passwordAttempt !== expectedPassword && passwordAttempt !== 'admin' && passwordAttempt !== 'password') {
+    if (!credInfo) {
+      auditTrailService.log({
+        userId: targetUser.id,
+        userName: targetUser.fullName,
+        userRole: targetUser.role,
+        action: 'LOGIN',
+        module: 'SECURITY',
+        details: `[OIDC AUTH FAILURE] Account ${targetUser.username} has no approved synthetic staging credential.`,
+        ipAddress: '192.168.10.45 (Clinical Workstation)',
+        status: 'DENIED',
+      });
+      return { success: false, error: 'This account must be activated through the server-backed identity service.' };
+    }
+    const expectedPassword = credInfo.password;
+    if (passwordAttempt !== expectedPassword) {
       auditTrailService.log({
         userId: targetUser.id,
         userName: targetUser.fullName,
