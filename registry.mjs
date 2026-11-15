@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -46,7 +46,7 @@ export async function migrateRegistry(database) {
 
 export function registryRoutes(database, origin) {
   const router = express.Router();
-  router.use(express.json({ limit: '4kb' }));
+  router.use(express.json({ limit: '16kb' }));
   router.use((req, res, next) => {
     res.set('Cache-Control', 'no-store');
     if (!database || !origin) return res.sendStatus(503);
@@ -259,6 +259,35 @@ export function registryRoutes(database, origin) {
     if (result.rowCount) return res.sendStatus(204);
     const existing = await database.query('SELECT 1 FROM scheduled_visits WHERE id=$1', [req.params.id]);
     res.sendStatus(existing.rowCount ? 204 : 404);
+  }));
+  router.use('/triage', (_req, res, next) => {
+    if (res.locals.staff.role !== 'triage') return res.sendStatus(403);
+    next();
+  });
+  router.get('/triage', route(async (_req, res) => {
+    const { rows } = await database.query(
+      `SELECT v.id, v.patient_mrn AS "patientMrn", p.first_name AS "firstName",
+              p.last_name AS "lastName", v.checked_in_at AS "checkedInAt"
+       FROM scheduled_visits v JOIN registry_patients p ON p.mrn=v.patient_mrn
+       WHERE v.status='waiting_for_triage' ORDER BY v.checked_in_at, v.id LIMIT 100`,
+    );
+    res.json(rows);
+  }));
+  router.post('/triage/:id/assessment', route(async (req, res) => {
+    const { notes } = req.body ?? {};
+    if (!uuid.test(req.params.id) || !maxText(notes, 2000) || !notes) return res.sendStatus(400);
+    const result = await transaction(database, async client => {
+      const { rows: [visit] } = await client.query(
+        'SELECT status FROM scheduled_visits WHERE id=$1 FOR UPDATE', [req.params.id],
+      );
+      if (!visit) return 404;
+      if (visit.status !== 'waiting_for_triage') return 409;
+      await client.query('INSERT INTO triage_assessments (visit_id,notes,recorded_by) VALUES ($1,$2,$3)',
+        [req.params.id, notes, res.locals.staff.username]);
+      await client.query("UPDATE scheduled_visits SET status='triaged' WHERE id=$1", [req.params.id]);
+      return 201;
+    });
+    res.sendStatus(result);
   }));
   router.use((_req, res) => res.sendStatus(404));
   router.use((error, _req, res, _next) => {
