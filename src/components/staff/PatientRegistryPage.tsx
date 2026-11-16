@@ -29,7 +29,7 @@ type AppointmentRequest = {
 type ScheduleSlot = {
   id: string; clinicianId: string; startsAt: string; visitId: string | null;
   status: 'scheduled' | 'waiting_for_triage' | 'triaged' | 'completed' | null;
-  notificationStatus: 'pending' | 'sent' | 'failed' | null;
+  notificationStatus: 'pending' | 'sent' | 'failed' | 'superseded' | null;
   patientMrn: string | null; firstName: string | null; lastName: string | null;
 };
 
@@ -60,6 +60,39 @@ async function request<T>(route: string, body?: Record<string, string>): Promise
     throw new Error(messages[response.status] ?? 'The registry is temporarily unavailable.');
   }
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : undefined as T;
+}
+
+type NotificationEvent = {
+  id: string; eventType: string; deliveryStatus: string; startsAt: string; patientMrn: string;
+};
+
+function AppointmentNotifications() {
+  const [events, setEvents] = useState<NotificationEvent[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function load() {
+    setBusy(true);
+    setMessage('');
+    try {
+      setEvents(await request<NotificationEvent[]>('/schedule/notifications'));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Notifications unavailable.');
+    } finally { setBusy(false); }
+  }
+
+  return <section className="space-y-4">
+    <h2 className="text-xl font-semibold">Appointment notifications</h2>
+    <p>Pending events are queued for SMS delivery.</p>
+    <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load()}>{events ? 'Refresh notifications' : 'Load notifications'}</button>
+    <p role="status">{message}</p>
+    {events?.length === 0 && <p>No notification events.</p>}
+    {events?.map(event => <article key={event.id} className="rounded-md border border-slate-200 bg-white p-4">
+      <h3 className="font-semibold">{event.eventType === 'visit_scheduled' ? 'Appointment scheduled' : event.eventType === 'visit_rescheduled' ? 'Appointment rescheduled' : 'Appointment cancelled'}</h3>
+      <p className="break-all text-sm">MRN {event.patientMrn} | {scheduleDate.format(new Date(event.startsAt))} (Monrovia)</p>
+      <p className="text-sm">SMS delivery: {event.deliveryStatus}</p>
+    </article>)}
+  </section>;
 }
 
 type AppointmentChange = { id: string; kind: 'cancel' | 'reschedule'; patientMrn: string;
@@ -454,6 +487,7 @@ export function PatientRegistryPage() {
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
+    { id: 'notifications', label: 'Appointment notifications' },
   ] : staff.role === 'clinician' ? [
     { id: 'workflow', label: 'Assigned encounters' }, { id: 'results', label: 'Department results' },
   ] : staff.role === 'restricted' ? [] : [
@@ -506,6 +540,7 @@ export function PatientRegistryPage() {
             <div>
             {staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
+            : staff.role === 'registrar' && section === 'notifications' ? <AppointmentNotifications />
             : staff.role === 'triage' ? <AssessmentWorkspace /> : staff.role === 'clinician' ? (section === 'results' ? <ClinicianResults /> : <AssessmentWorkspace clinician />) : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (
           <div className="grid gap-5 sm:grid-cols-2">
             {staff.role === 'registrar' && (

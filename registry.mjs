@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -316,9 +316,23 @@ export function registryRoutes(database, origin) {
         p.first_name AS "firstName", p.last_name AS "lastName", n.delivery_status AS "notificationStatus"
        FROM clinician_slots s LEFT JOIN scheduled_visits v ON s.id=v.slot_id AND v.status<>'cancelled'
        LEFT JOIN registry_patients p ON p.mrn=v.patient_mrn
-       LEFT JOIN patient_notification_outbox n ON n.visit_id=v.id AND n.event_type='visit_scheduled' AND n.channel='sms'
+       LEFT JOIN LATERAL (
+         SELECT delivery_status FROM patient_notification_outbox WHERE visit_id=v.id AND channel='sms'
+         ORDER BY queued_at DESC,id DESC LIMIT 1
+       ) n ON true
        WHERE (v.id IS NULL AND s.starts_at>now()) OR v.id IS NOT NULL
        ORDER BY CASE WHEN v.status='waiting_for_triage' THEN 0 ELSE 1 END, s.starts_at, s.id LIMIT 100`,
+    );
+    res.json(rows);
+  }));
+
+  router.get('/schedule/notifications', route(async (_req, res) => {
+    const { rows } = await database.query(
+      `SELECT n.id,n.event_type AS "eventType",n.delivery_status AS "deliveryStatus",
+              n.queued_at AS "queuedAt",s.starts_at AS "startsAt",v.patient_mrn AS "patientMrn"
+       FROM patient_notification_outbox n JOIN scheduled_visits v ON v.id=n.visit_id
+       JOIN clinician_slots s ON s.id=n.slot_id
+       ORDER BY n.queued_at DESC,n.id DESC LIMIT 50`,
     );
     res.json(rows);
   }));
@@ -367,6 +381,17 @@ export function registryRoutes(database, origin) {
         'UPDATE appointment_changes SET status=$2,decided_by=$3,decided_at=now(),replacement_slot_id=$4 WHERE id=$1',
         [req.params.id, decision === 'approve' ? 'approved' : 'declined', res.locals.staff.username, replacement],
       );
+      if (decision === 'approve') {
+        await client.query(
+          "UPDATE patient_notification_outbox SET delivery_status='superseded' WHERE visit_id=$1 AND delivery_status='pending'",
+          [change.visit_id],
+        );
+        await client.query(
+          "INSERT INTO patient_notification_outbox (visit_id,event_type,channel,change_id,slot_id) VALUES ($1,$2,'sms',$3,$4)",
+          [change.visit_id, change.kind === 'cancel' ? 'visit_cancelled' : 'visit_rescheduled',
+            req.params.id, replacement ?? change.slot_id],
+        );
+      }
       return 204;
     });
     res.sendStatus(result);
@@ -412,7 +437,7 @@ export function registryRoutes(database, origin) {
       );
       if (!inserted.rowCount) return 409;
       await client.query(
-        "INSERT INTO patient_notification_outbox (visit_id,event_type,channel) VALUES ($1,'visit_scheduled','sms')", [visitId],
+        "INSERT INTO patient_notification_outbox (visit_id,event_type,channel,slot_id) VALUES ($1,'visit_scheduled','sms',$2)", [visitId, slotId],
       );
       return 201;
     });
