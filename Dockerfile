@@ -13,7 +13,7 @@ ENV NODE_ENV=production
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
-COPY server.mjs registry.mjs provision-staging-staff.mjs rotate-staging-access-key.mjs ./
+COPY server.mjs registry.mjs provision-staging-staff.mjs rotate-staging-access-key.mjs diagnose-staging-registry.mjs ./
 COPY migrations/ ./migrations/
 COPY --from=build /app/dist/ ./dist/
 
