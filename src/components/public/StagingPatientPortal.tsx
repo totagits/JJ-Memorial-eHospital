@@ -96,7 +96,7 @@ export function StagingPatientPortal() {
   return <section className="mx-auto max-w-3xl px-5 py-12">
     <h1 className="text-3xl font-bold">Staging patient portal</h1>
     <p className="mt-2 text-slate-700">Use synthetic patient data only.</p>
-    <p role="status" className="my-4">{message || (busy ? 'Loadingâ€¦' : '')}</p>
+    <p role="status" className="my-4">{message || (busy ? 'Loading...' : '')}</p>
     {patient ? <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
