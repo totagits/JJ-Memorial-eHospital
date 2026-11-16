@@ -398,6 +398,12 @@ const clinicianWorkstations = [
   { id: 'quality', label: 'Quality & Safety Incidents' },
 ];
 
+const pharmacyWorkstations = clinicianWorkstations
+  .filter(item => !['bi', 'workflow', 'triage', 'imaging'].includes(item.id))
+  .flatMap(item => item.id === 'pharmacy'
+    ? [{ ...item, available: true }, { id: 'analytics', label: 'Pharmacy workload analytics', available: true }]
+    : [{ ...item, available: false }]);
+
 type ResultVisit = { id: string; patientMrn: string; firstName: string; lastName: string; encounterAt: string; hasResults: boolean; visitReleasedAt: string | null };
 type DepartmentResult = {
   department: string; instruction: string; recordedResult: string | null;
@@ -586,7 +592,7 @@ export function PatientRegistryPage() {
     };
   }
 
-  const sections = staff && (staff.role === 'super_admin' ? [{ id: 'workflow', label: 'Staff access review' }] : isDepartmentRole(staff.role) ? [
+  const sections = staff && (staff.role === 'super_admin' ? [{ id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
@@ -632,10 +638,10 @@ export function PatientRegistryPage() {
         ) : (
           <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)]">
             <nav aria-label="Staff workspace" className="self-start rounded-lg border border-slate-200 bg-white p-3">
-              <p className="mb-2 px-2 text-sm font-semibold">{staff.role === 'clinician' ? 'Clinician workstations' : 'Workspace'}</p>
-              {sections?.map(item => <button key={item.id} type="button" aria-current={section === item.id ? 'page' : undefined}
+              <p className="mb-2 px-2 text-sm font-semibold">{staff.role === 'clinician' ? 'Clinician workstations' : staff.role === 'pharmacist' ? 'Pharmacy workstations' : 'Workspace'}</p>
+              {sections?.map(item => <button key={item.id} type="button" aria-current={(section === item.id || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'page' : undefined}
                 disabled={'available' in item && !item.available || staff.role === 'clinician' && !('available' in item)}
-                className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + (section === item.id ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
+                className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + ((section === item.id || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
                 onClick={() => setSection(item.id)}>{item.label}</button>)}
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
