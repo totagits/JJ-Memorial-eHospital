@@ -363,7 +363,7 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
 type ResultVisit = { id: string; patientMrn: string; firstName: string; lastName: string; encounterAt: string };
 type DepartmentResult = {
   department: string; instruction: string; recordedResult: string | null;
-  completionNotes: string; actor: string; completedAt: string;
+  completionNotes: string; actor: string; completedAt: string; patientReleasedAt: string | null;
 };
 const resultLabels: Record<string, string> = { nursing: 'Nursing Services', lab: 'Diagnostic Laboratory', pharmacy: 'Pharmacy' };
 
@@ -385,6 +385,20 @@ function ClinicianResults() {
     } finally { setBusy(false); }
   }
 
+  async function release(id: string, summary: string) {
+    setBusy(true);
+    setMessage('');
+    try {
+      await request('/encounters/' + id + '/results/release', { summary });
+      setMessage('Summary released to the patient portal.');
+      setSelected(current => current?.id === id ? {
+        id, rows: current.rows.map(row => row.department === 'lab' ? { ...row, patientReleasedAt: new Date().toISOString() } : row),
+      } : current);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Release failed.');
+    } finally { setBusy(false); }
+  }
+
   return <section className="space-y-4">
     <h2 className="text-xl font-semibold">Department results</h2>
     <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load()}>{visits ? 'Refresh results' : 'Load results'}</button>
@@ -400,6 +414,20 @@ function ClinicianResults() {
         {result.recordedResult && <p className="whitespace-pre-wrap break-words"><strong>Released result</strong>{' '}{result.recordedResult}</p>}
         <p className="whitespace-pre-wrap break-words"><strong>{result.recordedResult ? 'Review notes' : 'Completion notes'}</strong>{' '}{result.completionNotes}</p>
         <p className="text-sm">Completed by {result.actor} on {scheduleDate.format(new Date(result.completedAt))} (Monrovia)</p>
+        {result.department === 'lab' && (result.patientReleasedAt
+          ? <p className="font-medium text-teal-800">Released to patient portal</p>
+          : <form className="space-y-3 rounded-md bg-slate-50 p-3" onSubmit={event => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              void release(visit.id, String(data.get('summary')).trim());
+            }}>
+              <label className="block font-medium">Patient-facing summary
+                <textarea name="summary" required maxLength={1500} rows={3} className="mt-1 block w-full rounded-md border border-slate-400 p-2" />
+              </label>
+              <label className="flex items-center gap-2"><input type="checkbox" required /> I reviewed this summary for the patient portal.</label>
+              <button disabled={busy} className={scheduleButton}>Release summary to patient</button>
+            </form>)}
+
       </section>)}
     </article>)}
   </section>;

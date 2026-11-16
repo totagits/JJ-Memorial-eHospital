@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
-type Profile = { mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[] };
+type Profile = { mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
 const visitTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Monrovia' });
 const endpoint = '/api/registry/patient-portal';
 const button = 'min-h-11 rounded-lg bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
@@ -98,6 +98,15 @@ export function StagingPatientPortal() {
           </div>}
         </li>)}
       </ul>}
+      <section className="border-t border-slate-200 pt-4">
+        <h3 className="font-semibold">Released laboratory summaries</h3>
+        {!patient.labResults?.length ? <p className="mt-2">No released laboratory summaries.</p> : <ul className="divide-y divide-slate-200">
+          {patient.labResults.map(result => <li key={result.id} className="space-y-1 py-3">
+            <p className="text-sm text-slate-600">Released {visitTime.format(new Date(result.releasedAt))} (Monrovia)</p>
+            <p className="whitespace-pre-wrap break-words">{result.summary}</p>
+          </li>)}
+        </ul>}
+      </section>
     </div> : <form className="max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-5" onSubmit={signIn}>
       <h2 className="text-xl font-semibold">Patient sign-in</h2>
       <label className="block">Username<input className={input} name="username" autoComplete="username" maxLength={64} required /></label>
