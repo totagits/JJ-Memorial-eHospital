@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
-type Profile = { mrn: string; firstName: string; lastName: string; appointments: { department: string; startsAt: string }[] };
+type Profile = { mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[] };
 const visitTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Monrovia' });
 const endpoint = '/api/registry/patient-portal';
 const button = 'min-h-11 rounded-lg bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
@@ -47,6 +47,22 @@ export function StagingPatientPortal() {
     } finally { setBusy(false); }
   }
 
+  async function requestChange(id: string, kind: 'cancel' | 'reschedule') {
+    setBusy(true);
+    setMessage('');
+    try {
+      const response = await fetch(endpoint + '/appointments/' + id + '/change', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind }),
+      });
+      if (response.status === 409) throw new Error('This appointment already has a pending request or can no longer be changed.');
+      if (response.status !== 201) throw new Error('The request could not be saved. Refresh and try again.');
+      setPatient(await profile());
+      setMessage('Request sent for staff review.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The request failed.');
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     setBusy(true);
     setMessage('');
@@ -72,8 +88,14 @@ export function StagingPatientPortal() {
       </div>
       <h3 className="font-semibold">Upcoming appointments</h3>
       {patient.appointments.length === 0 ? <p>No upcoming appointments.</p> : <ul className="divide-y divide-slate-200">
-        {patient.appointments.map((item, index) => <li key={item.startsAt + item.department + index} className="py-3">
+        {patient.appointments.map(item => <li key={item.id} className="space-y-2 py-3">
           <p className="font-medium">{item.department}</p><p>{visitTime.format(new Date(item.startsAt))} (Monrovia)</p>
+          {item.status === 'cancelled' && <p className="font-medium">Cancelled</p>}
+          {item.change && <p>{item.change.kind === 'cancel' ? 'Cancellation' : 'Reschedule'} request {item.change.status}.</p>}
+          {item.status === 'scheduled' && item.change?.status !== 'pending' && <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={busy} className="min-h-11 rounded-md border border-slate-400 px-3" onClick={() => void requestChange(item.id, 'reschedule')}>Request reschedule</button>
+            <button type="button" disabled={busy} className="min-h-11 rounded-md border border-slate-400 px-3" onClick={() => void requestChange(item.id, 'cancel')}>Request cancellation</button>
+          </div>}
         </li>)}
       </ul>}
     </div> : <form className="max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-5" onSubmit={signIn}>

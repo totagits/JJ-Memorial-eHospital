@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -124,10 +124,13 @@ export function registryRoutes(database, origin) {
       );
       if (!patient) return null;
       const { rows: appointments } = await client.query(
-        `SELECT r.department, s.starts_at AS "startsAt"
+        `SELECT v.id,r.department,s.starts_at AS "startsAt",v.status,
+                (SELECT json_build_object('kind',c.kind,'status',c.status)
+                   FROM appointment_changes c WHERE c.visit_id=v.id
+                   ORDER BY c.requested_at DESC,c.id LIMIT 1) AS "change"
          FROM scheduled_visits v JOIN clinician_slots s ON s.id=v.slot_id
          JOIN appointment_requests r ON r.id=v.request_id
-         WHERE v.patient_mrn=$1 AND v.status='scheduled' AND s.starts_at>=now()
+         WHERE v.patient_mrn=$1 AND v.status IN ('scheduled','cancelled') AND s.starts_at>=now()
          ORDER BY s.starts_at,v.id LIMIT 50`, [patient.mrn],
       );
       await client.query("INSERT INTO registry_audit(actor,action,mrn) VALUES($1,'viewed',$2)", ['patient:' + patient.username, patient.mrn]);
@@ -138,6 +141,31 @@ export function registryRoutes(database, origin) {
     res.json(profile);
   }));
 
+  router.post('/patient-portal/appointments/:id/change', route(async (req, res) => {
+    const { kind } = req.body ?? {};
+    if (!uuid.test(req.params.id) || !['cancel','reschedule'].includes(kind)) return res.sendStatus(400);
+    const result = await transaction(database, async client => {
+      const { rows: [account] } = await client.query(
+        `SELECT a.username,a.patient_mrn FROM patient_portal_sessions t
+         JOIN patient_portal_accounts a USING(username)
+         WHERE t.token_hash=$1 AND t.expires_at>now() FOR SHARE OF a`, [portalSession(req)],
+      );
+      if (!account) return 401;
+      const { rows: [visit] } = await client.query(
+        `SELECT v.status,v.slot_id,s.starts_at FROM scheduled_visits v JOIN clinician_slots s ON s.id=v.slot_id
+         WHERE v.id=$1 AND v.patient_mrn=$2 FOR UPDATE OF v`, [req.params.id, account.patient_mrn],
+      );
+      if (!visit) return 404;
+      if (visit.status !== 'scheduled' || visit.starts_at <= new Date()) return 409;
+      const inserted = await client.query(
+        `INSERT INTO appointment_changes(id,visit_id,kind,requested_by,original_slot_id)
+         VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+        [randomUUID(), req.params.id, kind, account.username, visit.slot_id],
+      );
+      return inserted.rowCount ? 201 : 409;
+    });
+    res.sendStatus(result);
+  }));
   router.post('/patient-portal/logout', route(async (req, res) => {
     await database.query('DELETE FROM patient_portal_sessions WHERE token_hash=$1', [portalSession(req)]);
     res.clearCookie(portalCookie, cookieOptions).sendStatus(204);
@@ -286,13 +314,62 @@ export function registryRoutes(database, origin) {
       `SELECT s.id, s.clinician_id AS "clinicianId", s.starts_at AS "startsAt",
         v.id AS "visitId", v.status, v.patient_mrn AS "patientMrn",
         p.first_name AS "firstName", p.last_name AS "lastName", n.delivery_status AS "notificationStatus"
-       FROM clinician_slots s LEFT JOIN scheduled_visits v ON s.id=v.slot_id
+       FROM clinician_slots s LEFT JOIN scheduled_visits v ON s.id=v.slot_id AND v.status<>'cancelled'
        LEFT JOIN registry_patients p ON p.mrn=v.patient_mrn
        LEFT JOIN patient_notification_outbox n ON n.visit_id=v.id AND n.event_type='visit_scheduled' AND n.channel='sms'
        WHERE (v.id IS NULL AND s.starts_at>now()) OR v.id IS NOT NULL
        ORDER BY CASE WHEN v.status='waiting_for_triage' THEN 0 ELSE 1 END, s.starts_at, s.id LIMIT 100`,
     );
     res.json(rows);
+  }));
+
+  router.get('/schedule/changes', route(async (_req, res) => {
+    const { rows } = await database.query(
+      `SELECT c.id,c.kind,v.patient_mrn AS "patientMrn",p.first_name AS "firstName",p.last_name AS "lastName",
+              s.starts_at AS "startsAt",s.clinician_id AS "clinicianId"
+       FROM appointment_changes c JOIN scheduled_visits v ON v.id=c.visit_id
+       JOIN registry_patients p ON p.mrn=v.patient_mrn JOIN clinician_slots s ON s.id=v.slot_id
+       WHERE c.status='pending' ORDER BY c.requested_at,c.id LIMIT 50`,
+    );
+    res.json(rows);
+  }));
+  router.post('/schedule/changes/:id/decision', route(async (req, res) => {
+    const { decision, slotId } = req.body ?? {};
+    if (!uuid.test(req.params.id) || !['approve','decline'].includes(decision) ||
+        (slotId != null && (typeof slotId !== 'string' || !uuid.test(slotId)))) return res.sendStatus(400);
+    const result = await transaction(database, async client => {
+      const { rows: [change] } = await client.query(
+        `SELECT c.kind,c.status,c.visit_id,v.status AS visit_status,v.slot_id,s.clinician_id,s.starts_at
+         FROM appointment_changes c JOIN scheduled_visits v ON v.id=c.visit_id
+         JOIN clinician_slots s ON s.id=v.slot_id WHERE c.id=$1 FOR UPDATE OF v,c`, [req.params.id],
+      );
+      if (!change) return 404;
+      if (change.status !== 'pending') return 409;
+      let replacement = null;
+      if (decision === 'approve') {
+        if (change.visit_status !== 'scheduled' || change.starts_at <= new Date()) return 409;
+        if (change.kind === 'cancel') {
+          await client.query("UPDATE scheduled_visits SET status='cancelled' WHERE id=$1", [change.visit_id]);
+        } else {
+          if (!slotId || slotId === change.slot_id) return 400;
+          const slot = await client.query(
+            'SELECT 1 FROM clinician_slots WHERE id=$1 AND clinician_id=$2 AND starts_at>now() FOR UPDATE',
+            [slotId, change.clinician_id],
+          );
+          if (!slot.rowCount || (await client.query(
+            "SELECT 1 FROM scheduled_visits WHERE slot_id=$1 AND status<>'cancelled'", [slotId],
+          )).rowCount) return 409;
+          await client.query('UPDATE scheduled_visits SET slot_id=$2 WHERE id=$1', [change.visit_id, slotId]);
+          replacement = slotId;
+        }
+      }
+      await client.query(
+        'UPDATE appointment_changes SET status=$2,decided_by=$3,decided_at=now(),replacement_slot_id=$4 WHERE id=$1',
+        [req.params.id, decision === 'approve' ? 'approved' : 'declined', res.locals.staff.username, replacement],
+      );
+      return 204;
+    });
+    res.sendStatus(result);
   }));
 
   router.post('/schedule/slots', route(async (req, res) => {
@@ -349,8 +426,8 @@ export function registryRoutes(database, origin) {
        WHERE id=$1 AND status='scheduled'`, [req.params.id, res.locals.staff.username],
     );
     if (result.rowCount) return res.sendStatus(204);
-    const existing = await database.query('SELECT 1 FROM scheduled_visits WHERE id=$1', [req.params.id]);
-    res.sendStatus(existing.rowCount ? 204 : 404);
+    const existing = await database.query('SELECT status FROM scheduled_visits WHERE id=$1', [req.params.id]);
+    res.sendStatus(!existing.rowCount ? 404 : existing.rows[0].status === 'cancelled' ? 409 : 204);
   }));
   router.use('/triage', requirePermission('triage:manage'));
   router.get('/triage', route(async (_req, res) => {

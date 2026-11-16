@@ -62,9 +62,13 @@ async function request<T>(route: string, body?: Record<string, string>): Promise
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : undefined as T;
 }
 
+type AppointmentChange = { id: string; kind: 'cancel' | 'reschedule'; patientMrn: string;
+  firstName: string; lastName: string; startsAt: string; clinicianId: string };
+
 function AppointmentQueue() {
   const [items, setItems] = useState<AppointmentRequest[] | null>(null);
   const [slots, setSlots] = useState<ScheduleSlot[]>([]);
+  const [changes, setChanges] = useState<AppointmentChange[]>([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -73,11 +77,13 @@ function AppointmentQueue() {
     setMessage('');
     try {
       if (action) await action();
-      const [queue, schedule] = await Promise.all([
+      const [queue, schedule, pendingChanges] = await Promise.all([
         request<AppointmentRequest[]>('/appointments'), request<ScheduleSlot[]>('/schedule'),
+        request<AppointmentChange[]>('/schedule/changes'),
       ]);
       setItems(queue);
       setSlots(schedule);
+      setChanges(pendingChanges);
       if (action) setMessage('Request updated.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The queue is unavailable.');
@@ -117,6 +123,34 @@ function AppointmentQueue() {
         </label>
         <button disabled={busy} className={scheduleButton}>Publish slot</button>
       </form>
+      {items && <section className="mt-5 space-y-3" aria-labelledby="appointment-changes">
+        <h3 id="appointment-changes" className="font-semibold">Patient appointment changes</h3>
+        {changes.length === 0 && <p>No requests awaiting review.</p>}
+        {changes.map(change => <form key={change.id} className="space-y-3 rounded-md border border-slate-200 p-4" onSubmit={event => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          void update(() => request('/schedule/changes/' + change.id + '/decision', {
+            decision: 'approve', ...(data.get('slotId') && { slotId: String(data.get('slotId')) }),
+          }));
+        }}>
+          <p className="font-medium">{change.firstName} {change.lastName} | {change.kind === 'cancel' ? 'Cancellation' : 'Reschedule'}</p>
+          <p className="break-all text-sm">MRN {change.patientMrn} | {scheduleDate.format(new Date(change.startsAt))} (Monrovia)</p>
+          {change.kind === 'reschedule' && <label className="block">Replacement slot with the same clinician
+            <select name="slotId" className={scheduleInput} required>
+              <option value="">Select an open slot</option>
+              {slots.filter(slot => !slot.visitId && slot.clinicianId === change.clinicianId).map(slot =>
+                <option value={slot.id} key={slot.id}>{describeSlot(slot)}</option>)}
+            </select>
+          </label>}
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" className={scheduleButton} disabled={busy}>Approve request</button>
+            <button type="button" className="min-h-11 rounded-md border border-slate-400 px-4" disabled={busy}
+              onClick={() => void update(() => request('/schedule/changes/' + change.id + '/decision', { decision: 'decline' }))}>
+              Decline request
+            </button>
+          </div>
+        </form>)}
+      </section>}
       {items && <div className="mt-5 space-y-3">
         <h3 className="font-semibold">Clinician calendar and triage handoff</h3>
         {slots.length === 0 && <p>No slots or visits.</p>}
