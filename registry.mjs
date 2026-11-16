@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -150,7 +150,14 @@ export function registryRoutes(database, origin) {
          WHERE v.patient_mrn=$1 AND v.status='completed'
          ORDER BY e.recorded_at DESC,v.id LIMIT 100`, [patient.mrn],
       );
-      return { ...patient, appointments, labResults, visits };
+      const { rows: prescriptions } = await client.query(
+        `SELECT w.id, rx.medication, rx.directions, rx.status
+         FROM encounter_prescriptions rx JOIN department_work_items w ON w.id=rx.work_id
+         JOIN scheduled_visits v ON v.id=w.visit_id
+         WHERE v.patient_mrn=$1 AND v.status='completed'
+           AND rx.status IN ('dispensed','clarification')
+         ORDER BY w.requested_at DESC,w.id LIMIT 100`, [patient.mrn]);
+      return { ...patient, appointments, labResults, visits, prescriptions };
     });
     if (!profile) return res.sendStatus(401);
     res.json(profile);
@@ -638,6 +645,9 @@ export function registryRoutes(database, origin) {
         Object.entries(orders).some(([code, instruction]) => !orderDepartments.includes(code) || !maxText(instruction, 1500))) {
       return res.sendStatus(400);
     }
+    const { medication = '', directions = '' } = req.body ?? {};
+    if (!maxText(medication, 160) || !maxText(directions, 500) ||
+        Boolean(medication) !== Boolean(directions) || (medication && orders.pharmacy)) return res.sendStatus(400);
     const username = res.locals.staff.username;
     const result = await transaction(database, async client => {
       const { rows: [visit] } = await client.query(
@@ -662,6 +672,15 @@ export function registryRoutes(database, origin) {
           [randomUUID(), req.params.id, department, instruction],
         );
       }
+      if (medication) {
+        const workId = randomUUID();
+        await client.query(
+          "INSERT INTO department_work_items(id,visit_id,department_code,instruction) VALUES ($1,$2,'pharmacy',$3)",
+          [workId, req.params.id, medication + ' - ' + directions]);
+        await client.query(
+          'INSERT INTO encounter_prescriptions (work_id,medication,directions) VALUES ($1,$2,$3)',
+          [workId, medication, directions]);
+      }
       await client.query("UPDATE scheduled_visits SET status='completed' WHERE id=$1", [req.params.id]);
       return 201;
     });
@@ -675,11 +694,12 @@ export function registryRoutes(database, origin) {
     const [{ rows: items }, { rows: [counts] }] = await Promise.all([
       database.query(
         `SELECT w.id,w.instruction,w.requested_at AS "requestedAt",v.patient_mrn AS "patientMrn",
-                p.first_name AS "firstName",p.last_name AS "lastName", e.notes AS "recordedNotes"
+                p.first_name AS "firstName",p.last_name AS "lastName", e.notes AS "recordedNotes", rx.work_id IS NOT NULL AS "isPrescription"
          FROM department_work_items w
          JOIN staff_department_memberships m ON m.department_code=w.department_code AND m.username=$1 AND m.role=$2
          JOIN scheduled_visits v ON v.id=w.visit_id JOIN registry_patients p ON p.mrn=v.patient_mrn
          LEFT JOIN department_work_events e ON e.work_id=w.id AND e.state='recorded'
+         LEFT JOIN encounter_prescriptions rx ON rx.work_id=w.id
          WHERE w.department_code=$3 AND w.state=$4 ORDER BY w.requested_at,w.id LIMIT 50`, params),
       database.query(
         `SELECT count(*) FILTER (WHERE w.state=$4)::int AS waiting,
@@ -692,19 +712,23 @@ export function registryRoutes(database, origin) {
   }));
 
   router.post('/department-work/:id/record', route(async (req, res) => {
-    const { notes } = req.body ?? {};
+    const { notes, disposition } = req.body ?? {};
     if (!uuid.test(req.params.id) || !maxText(notes, 1500) || !notes) return res.sendStatus(400);
     const { username, role } = res.locals.staff;
     const { department, from, to } = departmentWork.get(role);
     const result = await transaction(database, async client => {
       const { rows: [item] } = await client.query(
-        `SELECT w.state FROM department_work_items w
+        `SELECT w.state, EXISTS (SELECT 1 FROM encounter_prescriptions rx WHERE rx.work_id=w.id) AS prescription FROM department_work_items w
          JOIN staff_department_memberships m ON m.department_code=w.department_code AND m.username=$1 AND m.role=$2
          WHERE w.id=$3 AND w.department_code=$4 FOR UPDATE OF w,m`,
         [username, role, req.params.id, department],
       );
       if (!item) return 404;
       if (item.state !== from) return 409;
+      if (item.prescription) {
+        if (role !== 'pharmacist' || !['dispensed','clarification'].includes(disposition)) return 400;
+        await client.query('UPDATE encounter_prescriptions SET status=$2 WHERE work_id=$1', [req.params.id, disposition]);
+      } else if (disposition !== undefined) return 400;
       await client.query(
         'INSERT INTO department_work_events(work_id,state,notes,actor) VALUES ($1,$2,$3,$4)',
         [req.params.id, to, notes, username],

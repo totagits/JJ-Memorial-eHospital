@@ -14,7 +14,7 @@ const departmentLabels: Record<DepartmentRole, { title: string; action: string }
 };
 const isDepartmentRole = (role: Staff['role']): role is DepartmentRole => Object.hasOwn(departmentLabels, role);
 type WorkQueue = {
-  items: { id: string; instruction: string; patientMrn: string; firstName: string; lastName: string; recordedNotes: string | null }[];
+  items: { id: string; instruction: string; patientMrn: string; firstName: string; lastName: string; recordedNotes: string | null; isPrescription: boolean }[];
   counts: { waiting: number; completed: number };
 };
 
@@ -265,11 +265,11 @@ function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function update(assessment?: { id: string; notes: string; orders?: Record<string, string> }) {
+  async function update(assessment?: { id: string; notes: string; orders?: Record<string, string>; medication?: string; directions?: string }) {
     setBusy(true);
     setMessage('');
     try {
-      if (assessment) await request(endpoint + '/' + assessment.id + '/assessment', { notes: assessment.notes, ...(assessment.orders && { orders: assessment.orders }) });
+      if (assessment) await request(endpoint + '/' + assessment.id + '/assessment', { notes: assessment.notes, ...(assessment.orders && { orders: assessment.orders, medication: assessment.medication ?? "", directions: assessment.directions ?? "" }) });
       setQueue(await request<TriageVisit[]>(endpoint));
       if (assessment) setMessage('Assessment recorded.');
     } catch (error) {
@@ -290,7 +290,13 @@ function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
           const orders = clinician ? Object.fromEntries(['nursing', 'lab', 'pharmacy'].map(code => [code, String(data.get(code)).trim()])) : undefined;
-          void update({ id: visit.id, notes: String(data.get('notes')).trim(), orders });
+          const medication = String(data.get('medication') ?? '').trim();
+          const directions = String(data.get('directions') ?? '').trim();
+          if (Boolean(medication) !== Boolean(directions) || (medication && orders?.pharmacy)) {
+            setMessage('Enter both prescription fields and leave general pharmacy instructions blank for a prescription.');
+            return;
+          }
+          void update({ id: visit.id, notes: String(data.get('notes')).trim(), orders, medication, directions });
         }}>
           <h3 className="font-semibold">{visit.firstName} {visit.lastName}</h3>
           <p className="text-sm">{visit.department}</p>
@@ -308,6 +314,11 @@ function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
               </label>
             ))}
           </fieldset>}
+          {clinician && <fieldset className="space-y-2">
+            <legend className="font-medium">Prescription (optional)</legend>
+            <label className="block">Medication<input name="medication" maxLength={160} className="mt-1 block w-full rounded-md border border-slate-400 p-2" /></label>
+            <label className="block">Directions<textarea name="directions" maxLength={500} rows={2} className="mt-1 block w-full rounded-md border border-slate-400 p-2" /></label>
+          </fieldset>}
           <button disabled={busy} className={scheduleButton}>{clinician ? 'Complete encounter' : 'Record assessment'}</button>
         </form>
       ))}
@@ -320,11 +331,11 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function load(action?: { id: string; notes: string }) {
+  async function load(action?: { id: string; notes: string; disposition?: string }) {
     setBusy(true);
     setMessage('');
     try {
-      if (action) await request('/department-work/' + action.id + '/record', { notes: action.notes });
+      if (action) await request('/department-work/' + action.id + '/record', { notes: action.notes, ...(action.disposition && { disposition: action.disposition }) });
       setQueue(await request<WorkQueue>('/department-work'));
       if (action) setMessage('Work recorded.');
     } catch (error) {
@@ -345,17 +356,25 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
     {!analytics && queue?.items.length === 0 && <p>No work awaiting this role.</p>}
     {!analytics && queue?.items.map(item => <form key={item.id} className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={event => {
       event.preventDefault();
-      const notes = String(new FormData(event.currentTarget).get('notes')).trim();
-      void load({ id: item.id, notes });
+      const data = new FormData(event.currentTarget);
+      const notes = String(data.get('notes')).trim();
+      void load({ id: item.id, notes, disposition: item.isPrescription ? String(data.get('disposition')) : undefined });
     }}>
       <h3 className="font-semibold">{item.firstName} {item.lastName}</h3>
       <p className="break-all text-sm">MRN {item.patientMrn}</p>
       <p className="whitespace-pre-wrap break-words"><strong>Request</strong>{' '}{item.instruction}</p>
       {item.recordedNotes && <p className="whitespace-pre-wrap break-words"><strong>Recorded result</strong>{' '}{item.recordedNotes}</p>}
+      {item.isPrescription && <label className="block">Prescription disposition
+        <select name="disposition" required defaultValue="" className="mt-1 block w-full rounded-md border border-slate-400 p-2">
+          <option value="" disabled>Select disposition</option>
+          <option value="dispensed">Dispensed</option>
+          <option value="clarification">Returned for clarification</option>
+        </select>
+      </label>}
       <label className="block">Work notes
         <textarea name="notes" required maxLength={1500} rows={3} className="mt-1 block w-full rounded-md border border-slate-400 p-2" />
       </label>
-      <button disabled={busy} className={scheduleButton}>{departmentLabels[role].action}</button>
+      <button disabled={busy} className={scheduleButton}>{item.isPrescription ? 'Record prescription disposition' : departmentLabels[role].action}</button>
     </form>)}
   </section>;
 }
