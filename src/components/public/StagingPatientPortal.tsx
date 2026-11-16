@@ -3,7 +3,16 @@ import { useEffect, useState, type FormEvent } from 'react';
 const encounterTypes = { OPD: 'OPD', EMERGENCY: 'Emergency', INPATIENT: 'Inpatient', FOLLOWUP: 'Follow-up' } as const;
 type EncounterType = keyof typeof encounterTypes;
 type Visit = { id: string; department: string; encounterType: EncounterType; encounterAt: string; summary: string; releasedAt: string };
-type Profile = { prescriptions?: { id: string; medication: string; directions: string; status: string }[]; visits?: Visit[]; mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
+type Invoice = {
+  id: string;
+  currency: 'USD' | 'LRD';
+  description: string;
+  amountMinor: number;
+  issuedAt: string;
+  receiptId: string | null;
+  paidAt: string | null;
+};
+type Profile = { invoices?: Invoice[]; prescriptions?: { id: string; medication: string; directions: string; status: string }[]; visits?: Visit[]; mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
 const visitTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Monrovia' });
 const endpoint = '/api/registry/patient-portal';
 const button = 'min-h-11 rounded-lg bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
@@ -147,7 +156,18 @@ export function StagingPatientPortal() {
           </li>)}
         </ul>}
       </section>}
-      {section !== 'health' && section !== 'history' && section !== 'appointments' && section !== 'lab' && section !== 'prescriptions' && <section>
+      {section === 'billing' && <section className="space-y-3">
+        <h3 className="font-semibold">Invoices &amp; Receipts</h3>
+        {!patient.invoices?.length ? <p>No issued invoices.</p> : <ul className="divide-y divide-slate-200">
+          {patient.invoices.map(invoice => <li key={invoice.id} className="space-y-1 py-3">
+            <p className="font-semibold">{invoice.description}</p>
+            <p>{invoice.currency} {(invoice.amountMinor / 100).toFixed(2)} · {invoice.receiptId ? 'Paid' : 'Outstanding'}</p>
+            <p className="break-all text-sm text-slate-600">Invoice {invoice.id} · {visitTime.format(new Date(invoice.issuedAt))} (Monrovia)</p>
+            {invoice.receiptId && invoice.paidAt && <p className="break-all text-sm">Receipt {invoice.receiptId} · {visitTime.format(new Date(invoice.paidAt))} (Monrovia)</p>}
+          </li>)}
+        </ul>}
+      </section>}
+      {section !== 'health' && section !== 'history' && section !== 'appointments' && section !== 'lab' && section !== 'prescriptions' && section !== 'billing' && <section>
         <h3 className="font-semibold">{workspaceSections.find(([id]) => id === section)?.[1]}</h3>
         <p className="mt-3 text-slate-700">This section is not yet available in the staging patient portal.</p>
       </section>}

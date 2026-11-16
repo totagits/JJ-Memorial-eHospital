@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -62,6 +62,7 @@ const staffPermissions = new Map([
   ['viewer', new Set(['patients:read'])],
   ['triage', new Set(['triage:manage'])],
   ['clinician', new Set(['encounters:assigned'])],
+  ['cashier', new Set(['billing:manage'])],
   ...Array.from(departmentWork.keys(), role => [role, new Set(['department:work'])]),
   ['restricted', new Set()],
   ['super_admin', new Set(['staff:review'])],
@@ -157,7 +158,12 @@ export function registryRoutes(database, origin) {
          WHERE v.patient_mrn=$1 AND v.status='completed'
            AND rx.status IN ('dispensed','clarification')
          ORDER BY w.requested_at DESC,w.id LIMIT 100`, [patient.mrn]);
-      return { ...patient, appointments, labResults, visits, prescriptions };
+      const { rows: invoices } = await client.query(
+        `SELECT i.id, i.currency, i.description, i.amount_minor AS "amountMinor", i.issued_at AS "issuedAt",
+                r.id AS "receiptId", r.recorded_at AS "paidAt"
+         FROM staging_invoices i LEFT JOIN staging_receipts r ON r.invoice_id=i.id
+         WHERE i.patient_mrn=$1 ORDER BY i.issued_at DESC,i.id LIMIT 100`, [patient.mrn]);
+      return { ...patient, appointments, labResults, visits, prescriptions, invoices };
     });
     if (!profile) return res.sendStatus(401);
     res.json(profile);
@@ -738,6 +744,51 @@ export function registryRoutes(database, origin) {
     });
     res.sendStatus(result);
   }));
+  router.use('/billing', requirePermission('billing:manage'));
+  router.get('/billing/:mrn', route(async (req, res) => {
+    if (!uuid.test(req.params.mrn)) return res.sendStatus(400);
+    const { rows } = await database.query(
+      `SELECT i.id, i.currency, i.description, i.amount_minor AS "amountMinor", i.issued_at AS "issuedAt",
+              r.id AS "receiptId", r.recorded_at AS "paidAt", p.first_name AS "firstName", p.last_name AS "lastName"
+       FROM staging_invoices i JOIN registry_patients p ON p.mrn=i.patient_mrn
+       LEFT JOIN staging_receipts r ON r.invoice_id=i.id
+       WHERE i.patient_mrn=$1 ORDER BY i.issued_at DESC,i.id LIMIT 100`, [req.params.mrn]);
+    res.json(rows);
+  }));
+
+  router.post('/billing/invoices', route(async (req, res) => {
+    const { id, mrn, currency, description, amountMinor } = req.body ?? {};
+    if (!uuid.test(id ?? '') || !uuid.test(mrn ?? '') || !['USD','LRD'].includes(currency) ||
+        !maxText(description, 240) || !description || !Number.isSafeInteger(amountMinor) ||
+        amountMinor < 1 || amountMinor > 2147483647) return res.sendStatus(400);
+    const result = await transaction(database, async client => {
+      const { rowCount } = await client.query(
+        `INSERT INTO staging_invoices(id,patient_mrn,currency,description,amount_minor,issued_by)
+         SELECT $1,mrn,$3,$4,$5,$6 FROM registry_patients WHERE mrn=$2 AND first_name='Synthetic'
+         ON CONFLICT DO NOTHING`, [id,mrn,currency,description,amountMinor,res.locals.staff.username]);
+      if (rowCount) return 201;
+      const existing = await client.query(
+        `SELECT 1 FROM staging_invoices WHERE id=$1 AND patient_mrn=$2 AND currency=$3
+         AND description=$4 AND amount_minor=$5 AND issued_by=$6`,
+        [id,mrn,currency,description,amountMinor,res.locals.staff.username]);
+      return existing.rowCount ? 200 : 409;
+    });
+    res.sendStatus(result);
+  }));
+
+  router.post('/billing/invoices/:id/payment', route(async (req, res) => {
+    if (!uuid.test(req.params.id)) return res.sendStatus(400);
+    const result = await transaction(database, async client => {
+      const { rowCount } = await client.query(
+        `INSERT INTO staging_receipts(id,invoice_id,recorded_by)
+         SELECT $1,i.id,$3 FROM staging_invoices i JOIN registry_patients p ON p.mrn=i.patient_mrn
+         WHERE i.id=$2 AND p.first_name='Synthetic' ON CONFLICT (invoice_id) DO NOTHING`,
+        [randomUUID(),req.params.id,res.locals.staff.username]);
+      return rowCount ? 201 : 409;
+    });
+    res.sendStatus(result);
+  }));
+
   router.get('/admin/staff', requirePermission('staff:review'), route(async (req, res) => {
     const after = req.query.after ?? '';
     if (typeof after !== 'string' || (after && !/^[a-z0-9._-]{3,64}$/.test(after))) return res.sendStatus(400);

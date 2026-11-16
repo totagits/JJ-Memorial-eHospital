@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 type Staff = {
   username: string;
-  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' | 'super_admin' | DepartmentRole;
+  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' | 'super_admin' | 'cashier' | DepartmentRole;
   departments?: { code: string; name: string; role: string }[];
 };
 type DepartmentRole = 'nurse' | 'lab_technician' | 'lab_reviewer' | 'pharmacist';
@@ -44,7 +44,7 @@ const describeSlot = (slot: ScheduleSlot) => clinicianNames[slot.clinicianId] + 
 const scheduleInput = 'mt-1 block min-h-11 rounded-md border border-slate-400 px-2';
 const scheduleButton = 'min-h-11 rounded-md bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
 
-async function request<T>(route: string, body?: Record<string, string | Record<string, string>>): Promise<T> {
+async function request<T>(route: string, body?: Record<string, string | number | Record<string, string>>): Promise<T> {
   const response = await fetch('/api/registry' + route, {
     cache: 'no-store',
     ...(body && { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
@@ -514,6 +514,103 @@ function ClinicianResults() {
   </section>;
 }
 
+type BillingRecord = {
+  id: string; firstName: string; lastName: string; currency: string; description: string;
+  amountMinor: number; issuedAt: string; receiptId: string | null; paidAt: string | null;
+};
+
+function CashierWorkspace() {
+  const [mrn, setMrn] = useState('');
+  const [records, setRecords] = useState<BillingRecord[]>([]);
+  const [document, setDocument] = useState<{ record: BillingRecord; receipt: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [draftId, setDraftId] = useState(() => crypto.randomUUID());
+
+  async function run(action?: () => Promise<string>) {
+    setBusy(true);
+    setMessage('');
+    try {
+      const status = action ? await action() : '';
+      setRecords(await request<BillingRecord[]>('/billing/' + encodeURIComponent(mrn.trim())));
+      setMessage(status);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Billing request failed.');
+    } finally { setBusy(false); }
+  }
+
+  return <section className="space-y-4">
+    <style>{'@media print { body:has(#billing-document) * { visibility: hidden; } #billing-document, #billing-document * { visibility: visible !important; } #billing-document { position: absolute; inset: 0 auto auto 0; width: 100%; } }'}</style>
+    <h2 className="text-xl font-semibold">Cashier workstation</h2>
+    <form className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={event => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      if ((event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'lookup') {
+        void run();
+        return;
+      }
+      const amount = String(form.get('amount')).trim();
+      if (!/^\d{1,8}(\.\d{1,2})?$/.test(amount)) {
+        setMessage('Enter an amount with up to two decimal places.');
+        return;
+      }
+      const [whole, cents = ''] = amount.split('.');
+      const amountMinor = Number(whole) * 100 + Number(cents.padEnd(2, '0'));
+      void run(async () => {
+        await request('/billing/invoices', { id: draftId, mrn: mrn.trim(), currency: String(form.get('currency')),
+          description: String(form.get('description')).trim(), amountMinor });
+        setDraftId(crypto.randomUUID());
+        return 'Invoice issued.';
+      });
+    }}>
+      <label className="block">Patient MRN<input value={mrn} onChange={event => {
+        setMrn(event.target.value); setRecords([]); setDocument(null);
+      }} required maxLength={36} className={scheduleInput} /></label>
+      <button disabled={busy} formNoValidate value="lookup" className={scheduleButton}>Find invoices</button>
+      <label className="block">Charge description<input name="description" required maxLength={240} className={scheduleInput} /></label>
+      <label className="block">Settlement currency<select name="currency" className={scheduleInput}><option>USD</option><option>LRD</option></select></label>
+      <label className="block">Amount<input name="amount" required inputMode="decimal" className={scheduleInput} /></label>
+      <button disabled={busy} className={scheduleButton}>Issue staging invoice</button>
+    </form>
+    <p role="status">{message}</p>
+    {records.map(record => <article key={record.id} className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="font-semibold">{record.description}</h3>
+      <p>{record.currency} {(record.amountMinor / 100).toFixed(2)} · {record.receiptId ? 'Paid' : 'Outstanding'}</p>
+      <div className="flex flex-wrap gap-2">
+        <button className={scheduleButton} onClick={() => setDocument({ record, receipt: false })}>View invoice</button>
+        {record.receiptId
+          ? <button className={scheduleButton} onClick={() => setDocument({ record, receipt: true })}>View receipt</button>
+          : <button className={scheduleButton} disabled={busy} onClick={() => void run(async () => {
+              await request('/billing/invoices/' + record.id + '/payment', {});
+              setDocument(null);
+              return 'Full staging payment recorded.';
+            })}>Record full staging payment</button>}
+      </div>
+    </article>)}
+    {document && <>
+      <button className={scheduleButton} onClick={() => window.print()}>Print {document.receipt ? 'receipt' : 'invoice'}</button>
+      <article id="billing-document" className="space-y-5 rounded-xl border border-teal-900 bg-white p-8">
+        <header className="border-b-4 border-teal-800 pb-4">
+          <p className="text-2xl font-bold text-teal-900">J &amp; J Memorial Health Center</p>
+          <p>VOA East Community, Monrovia, Liberia</p>
+          <p>contact@jjmemorial.totag.network</p>
+        </header>
+        <p className="font-semibold text-teal-800">STAGING · SYNTHETIC TEST DOCUMENT</p>
+        <h3 className="text-xl font-bold">{document.receipt ? 'Payment receipt' : 'Invoice'}</h3>
+        <p>{document.record.firstName} {document.record.lastName}</p>
+        <p className="break-all">Invoice reference {document.record.id}</p>
+        {document.receipt && <p className="break-all">Receipt reference {document.record.receiptId}</p>}
+        <p>{scheduleDate.format(new Date(document.receipt ? document.record.paidAt! : document.record.issuedAt))} (Monrovia)</p>
+        <div className="flex flex-wrap justify-between gap-2 border-y border-slate-200 py-4">
+          <p>{document.record.description}</p>
+          <p className="font-bold">{document.record.currency} {(document.record.amountMinor / 100).toFixed(2)}</p>
+        </div>
+        <p className="font-semibold">{document.record.receiptId ? 'Paid in full' : 'Payment outstanding'}</p>
+      </article>
+    </>}
+  </section>;
+}
+
 type StaffAccessPage = { staff: (Staff & { clinicianId: string | null })[]; next: string | null };
 
 function StaffAccessReview() {
@@ -592,7 +689,7 @@ export function PatientRegistryPage() {
     };
   }
 
-  const sections = staff && (staff.role === 'super_admin' ? [{ id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
+  const sections = staff && (staff.role === 'cashier' ? [{ id: 'workflow', label: 'Invoices & receipts' }] : staff.role === 'super_admin' ? [{ id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
@@ -646,7 +743,7 @@ export function PatientRegistryPage() {
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
             <div>
-            {staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
+            {staff.role === 'cashier' ? <CashierWorkspace /> : staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
             : staff.role === 'registrar' && section === 'notifications' ? <AppointmentNotifications />
             : staff.role === 'triage' ? <AssessmentWorkspace /> : staff.role === 'clinician' ? (section === 'results' ? <ClinicianResults /> : <AssessmentWorkspace clinician />) : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (
