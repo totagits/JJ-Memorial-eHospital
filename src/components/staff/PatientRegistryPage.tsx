@@ -549,7 +549,23 @@ function CashierWorkspace({ role }: { role: 'billing' | 'cashier' }) {
   }
 
   return <section className="space-y-4">
-    <style>{'@media print { body:has(#billing-document) * { visibility: hidden; } #billing-document, #billing-document * { visibility: visible !important; } #billing-document { position: absolute; inset: 0 auto auto 0; width: 100%; } }'}</style>
+    <style>{`@media print {
+      body:has(#billing-document) > :not(:has(#billing-document)),
+      body :has(#billing-document) > :not(:has(#billing-document)):not(#billing-document) {
+        display: none !important;
+      }
+      body:has(#billing-document), body :has(#billing-document) {
+        display: block !important;
+        width: auto !important;
+        max-width: none !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+      }
+      #billing-document { margin: 0 !important; break-inside: avoid; }
+    }`}</style>
     <h2 className="text-xl font-semibold">Billing &amp; Invoicing</h2>
     <form className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={event => {
       event.preventDefault();
