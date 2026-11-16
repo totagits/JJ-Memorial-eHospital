@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -142,7 +142,15 @@ export function registryRoutes(database, origin) {
          WHERE v.patient_mrn=$1 AND w.department_code='lab' AND w.state='completed'
          ORDER BY r.released_at DESC,w.id LIMIT 50`, [patient.mrn],
       );
-      return { ...patient, appointments, labResults };
+      const { rows: visits } = await client.query(
+        `SELECT v.id, a.department, r.encounter_type AS "encounterType",
+                e.recorded_at AS "encounterAt", r.summary, r.released_at AS "releasedAt"
+         FROM patient_visit_releases r JOIN clinician_encounters e USING(visit_id)
+         JOIN scheduled_visits v ON v.id=e.visit_id JOIN appointment_requests a ON a.id=v.request_id
+         WHERE v.patient_mrn=$1 AND v.status='completed'
+         ORDER BY e.recorded_at DESC,v.id LIMIT 100`, [patient.mrn],
+      );
+      return { ...patient, appointments, labResults, visits };
     });
     if (!profile) return res.sendStatus(401);
     res.json(profile);
@@ -520,7 +528,8 @@ export function registryRoutes(database, origin) {
   router.get('/encounters/results', route(async (_req, res) => {
     const { rows } = await database.query(
       `SELECT v.id, v.patient_mrn AS "patientMrn", p.first_name AS "firstName",
-              p.last_name AS "lastName", e.recorded_at AS "encounterAt"
+              p.last_name AS "lastName", e.recorded_at AS "encounterAt", pr.released_at AS "visitReleasedAt",
+              EXISTS (SELECT 1 FROM department_work_items w WHERE w.visit_id=v.id AND w.state='completed') AS "hasResults"
        FROM scheduled_visits v
        JOIN clinician_encounters e ON e.visit_id=v.id
        JOIN registry_patients p ON p.mrn=v.patient_mrn
@@ -530,8 +539,8 @@ export function registryRoutes(database, origin) {
        JOIN appointment_department_map dm ON dm.request_department=a.department
        JOIN staff_department_memberships m ON m.department_code=dm.department_code
          AND m.username=staff.username AND m.role='clinician'
+       LEFT JOIN patient_visit_releases pr ON pr.visit_id=v.id
        WHERE staff.username=$1 AND v.status='completed'
-         AND EXISTS (SELECT 1 FROM department_work_items w WHERE w.visit_id=v.id AND w.state='completed')
        ORDER BY e.recorded_at DESC,v.id LIMIT 50`, [res.locals.staff.username],
     );
     res.json(rows);
@@ -587,6 +596,34 @@ export function registryRoutes(database, origin) {
       const released = await client.query(
         'INSERT INTO patient_lab_releases (work_id,summary,released_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
         [work.id, summary, username],
+      );
+      return released.rowCount ? 201 : 409;
+    });
+    res.sendStatus(result);
+  }));
+
+  router.post('/encounters/:id/visit-release', route(async (req, res) => {
+    const { summary, encounterType } = req.body ?? {};
+    if (!uuid.test(req.params.id) || !maxText(summary, 1500) || !summary.trim() ||
+        !['OPD', 'EMERGENCY', 'INPATIENT', 'FOLLOWUP'].includes(encounterType)) return res.sendStatus(400);
+    const username = res.locals.staff.username;
+    const result = await transaction(database, async client => {
+      const { rowCount } = await client.query(
+        `SELECT v.id FROM scheduled_visits v JOIN clinician_encounters e ON e.visit_id=v.id
+         JOIN clinician_slots s ON s.id=v.slot_id
+         JOIN registry_staff staff ON staff.clinician_id=s.clinician_id AND staff.role='clinician'
+         JOIN appointment_requests a ON a.id=v.request_id
+         JOIN appointment_department_map dm ON dm.request_department=a.department
+         JOIN staff_department_memberships m ON m.department_code=dm.department_code
+           AND m.username=staff.username AND m.role='clinician'
+         WHERE v.id=$1 AND staff.username=$2 AND v.status='completed' FOR SHARE OF v,m,staff`,
+        [req.params.id, username],
+      );
+      if (!rowCount) return 404;
+      const released = await client.query(
+        `INSERT INTO patient_visit_releases (visit_id,summary,encounter_type,released_by)
+         VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+        [req.params.id, summary.trim(), encounterType, username],
       );
       return released.rowCount ? 201 : 409;
     });

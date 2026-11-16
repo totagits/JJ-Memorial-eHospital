@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
-type Profile = { mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
+const encounterTypes = { OPD: 'OPD', EMERGENCY: 'Emergency', INPATIENT: 'Inpatient', FOLLOWUP: 'Follow-up' } as const;
+type EncounterType = keyof typeof encounterTypes;
+type Visit = { id: string; department: string; encounterType: EncounterType; encounterAt: string; summary: string; releasedAt: string };
+type Profile = { visits?: Visit[]; mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
 const visitTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Monrovia' });
 const endpoint = '/api/registry/patient-portal';
 const button = 'min-h-11 rounded-lg bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
@@ -29,6 +32,7 @@ export function StagingPatientPortal() {
   const [patient, setPatient] = useState<Profile | null>(null);
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState('');
+  const [encounterType, setEncounterType] = useState('');
   const [section, setSection] = useState<WorkspaceSection>('health');
 
   useEffect(() => {
@@ -84,6 +88,7 @@ export function StagingPatientPortal() {
       if (!response.ok) throw new Error();
       setPatient(null);
       setSection('health');
+      setEncounterType('');
     } catch { setMessage('Sign-out failed. Please try again.'); }
     finally { setBusy(false); }
   }
@@ -91,7 +96,7 @@ export function StagingPatientPortal() {
   return <section className="mx-auto max-w-3xl px-5 py-12">
     <h1 className="text-3xl font-bold">Staging patient portal</h1>
     <p className="mt-2 text-slate-700">Use synthetic patient data only.</p>
-    <p role="status" className="my-4">{message || (busy ? 'Loading…' : '')}</p>
+    <p role="status" className="my-4">{message || (busy ? 'Loadingâ€¦' : '')}</p>
     {patient ? <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -102,7 +107,7 @@ export function StagingPatientPortal() {
       </div>
       <nav aria-label="Patient workspace" className="flex flex-wrap gap-2 border-y border-slate-200 py-3">
         {workspaceSections.map(([id, label]) => {
-          const count = id === 'appointments' ? patient.appointments.length : id === 'lab' ? patient.labResults?.length ?? 0 : null;
+          const count = id === 'appointments' ? patient.appointments.length : id === 'lab' ? patient.labResults?.length ?? 0 : id === 'history' ? patient.visits?.length ?? 0 : null;
           return <button key={id} type="button" aria-current={section === id ? 'page' : undefined}
             className={section === id ? button : 'min-h-11 rounded-lg px-3 text-teal-800 hover:bg-teal-50'}
             onClick={() => setSection(id)}>{label}{count === null ? '' : ` (${count})`}</button>;
@@ -115,13 +120,25 @@ export function StagingPatientPortal() {
           <button type="button" className={button} onClick={() => setSection('lab')}>View diagnostic reports</button>
         </div>
       </section>}
-      {section !== 'health' && section !== 'appointments' && section !== 'lab' && <section>
-        <h3 className="font-semibold">{workspaceSections.find(([id]) => id === section)?.[1]}</h3>
-        {section === 'history' && <label className="mt-3 block max-w-xs">Encounter Type
-          <select className={input} disabled>
-            {['All Visits', 'OPD', 'Emergency', 'Inpatient', 'Follow-up'].map(type => <option key={type}>{type}</option>)}
+      {section === 'history' && <section className="space-y-3">
+        <h3 className="font-semibold">Medical History &amp; Visits</h3>
+        <label className="block max-w-xs">Encounter Type
+          <select className={input} value={encounterType} onChange={event => setEncounterType(event.target.value)}>
+            <option value="">All Visits</option>
+            {Object.entries(encounterTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-        </label>}
+        </label>
+        <ul className="divide-y divide-slate-200">
+          {(patient.visits ?? []).filter(visit => !encounterType || visit.encounterType === encounterType).map(visit => <li key={visit.id} className="space-y-1 py-3">
+            <p className="font-semibold">{visit.department} · {encounterTypes[visit.encounterType]}</p>
+            <p className="text-sm text-slate-600">{visitTime.format(new Date(visit.encounterAt))} (Monrovia)</p>
+            <p className="whitespace-pre-wrap break-words">{visit.summary}</p>
+          </li>)}
+        </ul>
+        {!patient.visits?.some(visit => !encounterType || visit.encounterType === encounterType) && <p>No released visit summaries match this filter.</p>}
+      </section>}
+      {section !== 'health' && section !== 'history' && section !== 'appointments' && section !== 'lab' && <section>
+        <h3 className="font-semibold">{workspaceSections.find(([id]) => id === section)?.[1]}</h3>
         <p className="mt-3 text-slate-700">This section is not yet available in the staging patient portal.</p>
       </section>}
       {section === 'appointments' && <section aria-labelledby="patient-appointments">

@@ -44,7 +44,7 @@ const describeSlot = (slot: ScheduleSlot) => clinicianNames[slot.clinicianId] + 
 const scheduleInput = 'mt-1 block min-h-11 rounded-md border border-slate-400 px-2';
 const scheduleButton = 'min-h-11 rounded-md bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
 
-async function request<T>(route: string, body?: Record<string, string>): Promise<T> {
+async function request<T>(route: string, body?: Record<string, string | Record<string, string>>): Promise<T> {
   const response = await fetch('/api/registry' + route, {
     cache: 'no-store',
     ...(body && { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
@@ -360,7 +360,7 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
   </section>;
 }
 
-type ResultVisit = { id: string; patientMrn: string; firstName: string; lastName: string; encounterAt: string };
+type ResultVisit = { id: string; patientMrn: string; firstName: string; lastName: string; encounterAt: string; hasResults: boolean; visitReleasedAt: string | null };
 type DepartmentResult = {
   department: string; instruction: string; recordedResult: string | null;
   completionNotes: string; actor: string; completedAt: string; patientReleasedAt: string | null;
@@ -399,15 +399,52 @@ function ClinicianResults() {
     } finally { setBusy(false); }
   }
 
+  async function releaseVisit(id: string, form: FormData) {
+    setBusy(true);
+    setMessage('');
+    try {
+      await request('/encounters/' + id + '/visit-release', {
+        summary: String(form.get('summary')).trim(),
+        encounterType: String(form.get('encounterType')),
+      });
+      setVisits(current => current?.map(visit => visit.id === id
+        ? { ...visit, visitReleasedAt: new Date().toISOString() } : visit) ?? null);
+      setMessage('Visit summary released to the patient portal.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Visit release failed.');
+    } finally { setBusy(false); }
+  }
+
   return <section className="space-y-4">
     <h2 className="text-xl font-semibold">Department results</h2>
     <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load()}>{visits ? 'Refresh results' : 'Load results'}</button>
     <p role="status">{message}</p>
-    {visits?.length === 0 && <p>No completed department work for your assigned visits.</p>}
+    {visits?.length === 0 && <p>No completed assigned visits.</p>}
     {visits?.map(visit => <article key={visit.id} className="space-y-2 rounded-lg border border-slate-200 bg-white p-5">
       <h3 className="font-semibold">{visit.firstName} {visit.lastName}</h3>
       <p className="break-all text-sm">MRN {visit.patientMrn} | {scheduleDate.format(new Date(visit.encounterAt))} (Monrovia)</p>
-      <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load(visit.id)}>View department results</button>
+      {visit.hasResults && <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load(visit.id)}>View department results</button>}
+      {visit.visitReleasedAt ? <p className="font-medium text-teal-800">Visit summary released to patient portal</p>
+        : <form className="space-y-3 border-t border-slate-200 pt-3" onSubmit={event => {
+            event.preventDefault();
+            void releaseVisit(visit.id, new FormData(event.currentTarget));
+          }}>
+            <label className="block">Encounter type
+              <select name="encounterType" required defaultValue="" className="ml-2 rounded-md border border-slate-400 p-2">
+                <option value="" disabled>Select encounter type</option>
+                <option value="OPD">OPD</option>
+                <option value="EMERGENCY">Emergency</option>
+                <option value="INPATIENT">Inpatient</option>
+                <option value="FOLLOWUP">Follow-up</option>
+              </select>
+            </label>
+            <label className="block">Patient-facing visit summary
+              <textarea name="summary" required maxLength={1500} rows={3} className="mt-1 block w-full rounded-md border border-slate-400 p-2" />
+            </label>
+            <label className="flex items-center gap-2"><input type="checkbox" required /> I reviewed this visit summary for the patient portal.</label>
+            <button disabled={busy} className={scheduleButton}>Release visit summary</button>
+          </form>}
+
       {selected?.id === visit.id && selected.rows.map(result => <section key={result.department} className="space-y-2 border-t border-slate-200 pt-3">
         <h4 className="font-semibold">{resultLabels[result.department] ?? result.department}</h4>
         <p className="whitespace-pre-wrap break-words"><strong>Request</strong>{' '}{result.instruction}</p>
