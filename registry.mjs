@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -41,6 +41,10 @@ export async function migrateRegistry(database) {
       await client.query(await readFile(new URL('./migrations/' + file, import.meta.url), 'utf8'));
       await client.query('INSERT INTO registry_migrations VALUES ($1)', [version]);
     }
+    await client.query(
+      'INSERT INTO registry_instance(singleton, instance_id) VALUES (true, $1) ON CONFLICT (singleton) DO NOTHING',
+      [randomUUID()],
+    );
   });
 }
 
