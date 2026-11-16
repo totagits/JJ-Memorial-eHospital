@@ -360,6 +360,25 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
   </section>;
 }
 
+const clinicianWorkstations = [
+  { id: 'comms', label: 'Internal Staff Comms' },
+  { id: 'bi', label: 'Executive Intelligence (BI)' },
+  { id: 'hmis', label: 'Command Center & HMIS' },
+  { id: 'workflow', label: 'Clinical Charts (OPD EMR)', available: true },
+  { id: 'triage', label: 'Triage & Nursing Vitals' },
+  { id: 'adt', label: 'Inpatient Wards & Beds (ADT)' },
+  { id: 'results', label: 'Diagnostic Laboratory (LIS)', available: true },
+  { id: 'blood', label: 'Blood Bank & Transfusion' },
+  { id: 'imaging', label: 'Radiology & Imaging (PACS)' },
+  { id: 'equipment', label: 'Equipment & Resources' },
+  { id: 'pharmacy', label: 'Pharmacy & Drug Dispense' },
+  { id: 'insurance', label: 'Insurance Verification' },
+  { id: 'inventory', label: 'Inventory & Procurement' },
+  { id: 'rosters', label: 'Staff Scheduling & Rosters' },
+  { id: 'facilities', label: 'Biomedical & Facilities' },
+  { id: 'quality', label: 'Quality & Safety Incidents' },
+];
+
 type ResultVisit = { id: string; patientMrn: string; firstName: string; lastName: string; encounterAt: string; hasResults: boolean; visitReleasedAt: string | null };
 type DepartmentResult = {
   department: string; instruction: string; recordedResult: string | null;
@@ -553,9 +572,7 @@ export function PatientRegistryPage() {
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
     { id: 'notifications', label: 'Appointment notifications' },
-  ] : staff.role === 'clinician' ? [
-    { id: 'workflow', label: 'Assigned encounters' }, { id: 'results', label: 'Department results' },
-  ] : staff.role === 'restricted' ? [] : [
+  ] : staff.role === 'clinician' ? clinicianWorkstations : staff.role === 'restricted' ? [] : [
     { id: 'workflow', label: staff.role === 'viewer' ? 'Patient lookup' : staff.role === 'triage' ? 'Triage queue' : 'Assigned encounters' },
   ]);
 
@@ -596,9 +613,10 @@ export function PatientRegistryPage() {
         ) : (
           <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)]">
             <nav aria-label="Staff workspace" className="self-start rounded-lg border border-slate-200 bg-white p-3">
-              <p className="mb-2 px-2 text-sm font-semibold">Workspace</p>
+              <p className="mb-2 px-2 text-sm font-semibold">{staff.role === 'clinician' ? 'Clinician workstations' : 'Workspace'}</p>
               {sections?.map(item => <button key={item.id} type="button" aria-current={section === item.id ? 'page' : undefined}
-                className={'mb-1 block min-h-11 w-full rounded-md px-2 text-left text-sm ' + (section === item.id ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
+                disabled={'available' in item && !item.available || staff.role === 'clinician' && !('available' in item)}
+                className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + (section === item.id ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
                 onClick={() => setSection(item.id)}>{item.label}</button>)}
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
