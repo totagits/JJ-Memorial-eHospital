@@ -292,6 +292,51 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
   </section>;
 }
 
+type ResultVisit = { id: string; patientMrn: string; firstName: string; lastName: string; encounterAt: string };
+type DepartmentResult = {
+  department: string; instruction: string; recordedResult: string | null;
+  completionNotes: string; actor: string; completedAt: string;
+};
+const resultLabels: Record<string, string> = { nursing: 'Nursing Services', lab: 'Diagnostic Laboratory', pharmacy: 'Pharmacy' };
+
+function ClinicianResults() {
+  const [visits, setVisits] = useState<ResultVisit[] | null>(null);
+  const [selected, setSelected] = useState<{ id: string; rows: DepartmentResult[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function load(id?: string) {
+    setBusy(true);
+    setMessage('');
+    setSelected(null);
+    try {
+      if (id) setSelected({ id, rows: await request<DepartmentResult[]>('/encounters/' + id + '/results') });
+      else setVisits(await request<ResultVisit[]>('/encounters/results'));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Results unavailable.');
+    } finally { setBusy(false); }
+  }
+
+  return <section className="space-y-4">
+    <h2 className="text-xl font-semibold">Department results</h2>
+    <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load()}>{visits ? 'Refresh results' : 'Load results'}</button>
+    <p role="status">{message}</p>
+    {visits?.length === 0 && <p>No completed department work for your assigned visits.</p>}
+    {visits?.map(visit => <article key={visit.id} className="space-y-2 rounded-lg border border-slate-200 bg-white p-5">
+      <h3 className="font-semibold">{visit.firstName} {visit.lastName}</h3>
+      <p className="break-all text-sm">MRN {visit.patientMrn} | {scheduleDate.format(new Date(visit.encounterAt))} (Monrovia)</p>
+      <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load(visit.id)}>View department results</button>
+      {selected?.id === visit.id && selected.rows.map(result => <section key={result.department} className="space-y-2 border-t border-slate-200 pt-3">
+        <h4 className="font-semibold">{resultLabels[result.department] ?? result.department}</h4>
+        <p className="whitespace-pre-wrap break-words"><strong>Request</strong>{' '}{result.instruction}</p>
+        {result.recordedResult && <p className="whitespace-pre-wrap break-words"><strong>Released result</strong>{' '}{result.recordedResult}</p>}
+        <p className="whitespace-pre-wrap break-words"><strong>{result.recordedResult ? 'Review notes' : 'Completion notes'}</strong>{' '}{result.completionNotes}</p>
+        <p className="text-sm">Completed by {result.actor} on {scheduleDate.format(new Date(result.completedAt))} (Monrovia)</p>
+      </section>)}
+    </article>)}
+  </section>;
+}
+
 export function PatientRegistryPage() {
   const [staff, setStaff] = useState<Staff | null>(null);
   const [section, setSection] = useState('workflow');
@@ -335,6 +380,8 @@ export function PatientRegistryPage() {
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
+  ] : staff.role === 'clinician' ? [
+    { id: 'workflow', label: 'Assigned encounters' }, { id: 'results', label: 'Department results' },
   ] : staff.role === 'restricted' ? [] : [
     { id: 'workflow', label: staff.role === 'viewer' ? 'Patient lookup' : staff.role === 'triage' ? 'Triage queue' : 'Assigned encounters' },
   ]);
@@ -385,7 +432,7 @@ export function PatientRegistryPage() {
             <div>
             {isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
-            : staff.role === 'triage' ? <AssessmentWorkspace /> : staff.role === 'clinician' ? <AssessmentWorkspace clinician /> : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (
+            : staff.role === 'triage' ? <AssessmentWorkspace /> : staff.role === 'clinician' ? (section === 'results' ? <ClinicianResults /> : <AssessmentWorkspace clinician />) : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (
           <div className="grid gap-5 sm:grid-cols-2">
             {staff.role === 'registrar' && (
               <form className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={submit(async data => {

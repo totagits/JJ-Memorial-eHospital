@@ -351,6 +351,54 @@ export function registryRoutes(database, origin) {
     );
     res.json(rows);
   }));
+  router.get('/encounters/results', route(async (_req, res) => {
+    const { rows } = await database.query(
+      `SELECT v.id, v.patient_mrn AS "patientMrn", p.first_name AS "firstName",
+              p.last_name AS "lastName", e.recorded_at AS "encounterAt"
+       FROM scheduled_visits v
+       JOIN clinician_encounters e ON e.visit_id=v.id
+       JOIN registry_patients p ON p.mrn=v.patient_mrn
+       JOIN clinician_slots s ON s.id=v.slot_id
+       JOIN registry_staff staff ON staff.clinician_id=s.clinician_id AND staff.role='clinician'
+       JOIN appointment_requests a ON a.id=v.request_id
+       JOIN appointment_department_map dm ON dm.request_department=a.department
+       JOIN staff_department_memberships m ON m.department_code=dm.department_code
+         AND m.username=staff.username AND m.role='clinician'
+       WHERE staff.username=$1 AND v.status='completed'
+         AND EXISTS (SELECT 1 FROM department_work_items w WHERE w.visit_id=v.id AND w.state='completed')
+       ORDER BY e.recorded_at DESC,v.id LIMIT 50`, [res.locals.staff.username],
+    );
+    res.json(rows);
+  }));
+
+  router.get('/encounters/:id/results', route(async (req, res) => {
+    if (!uuid.test(req.params.id)) return res.sendStatus(400);
+    const username = res.locals.staff.username;
+    const results = await transaction(database, async client => {
+      const { rows } = await client.query(
+        `SELECT w.department_code AS department, w.instruction, v.patient_mrn AS "patientMrn",
+                r.notes AS "recordedResult", c.notes AS "completionNotes", c.actor, c.occurred_at AS "completedAt"
+         FROM scheduled_visits v JOIN clinician_slots s ON s.id=v.slot_id
+         JOIN registry_staff staff ON staff.clinician_id=s.clinician_id AND staff.role='clinician'
+         JOIN appointment_requests a ON a.id=v.request_id
+         JOIN appointment_department_map dm ON dm.request_department=a.department
+         JOIN staff_department_memberships m ON m.department_code=dm.department_code
+           AND m.username=staff.username AND m.role='clinician'
+         JOIN department_work_items w ON w.visit_id=v.id AND w.state='completed'
+         JOIN department_work_events c ON c.work_id=w.id AND c.state='completed'
+         LEFT JOIN department_work_events r ON r.work_id=w.id AND r.state='recorded'
+         WHERE v.id=$1 AND staff.username=$2 AND v.status='completed'
+         ORDER BY w.department_code`, [req.params.id, username],
+      );
+      if (rows.length) await client.query(
+        "INSERT INTO registry_audit (actor,action,mrn) VALUES ($1,'viewed',$2)", [username, rows[0].patientMrn],
+      );
+      return rows;
+    });
+    if (!results.length) return res.sendStatus(404);
+    res.json(results);
+  }));
+
   router.post('/encounters/:id/assessment', route(async (req, res) => {
     const { notes } = req.body ?? {};
     if (!uuid.test(req.params.id) || !maxText(notes, 2000) || !notes) return res.sendStatus(400);
