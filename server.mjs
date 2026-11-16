@@ -6,8 +6,16 @@ import { migrateRegistry, registryRoutes } from './registry.mjs';
 
 const app = express();
 const dist = path.join(import.meta.dirname, 'dist');
-const database = process.env.DATABASE_URL ? new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+const databaseUrl = process.env.DATABASE_URL;
+const expectedStagingDatabase = 'jj_memorial_staging';
+if (databaseUrl && (process.env.COOLIFY_FQDN === 'jjmemorial-staging.totag.network' || process.env.COOLIFY_URL === 'https://jjmemorial-staging.totag.network')) {
+  const databaseName = new URL(databaseUrl).pathname.replace(/^\//, '');
+  if (databaseName !== expectedStagingDatabase) {
+    throw new Error(`Refusing to start staging against unexpected database: ${databaseName || '(empty)'}`);
+  }
+}
+const database = databaseUrl ? new pg.Pool({
+  connectionString: databaseUrl,
   connectionTimeoutMillis: 2000,
   query_timeout: 2000,
   statement_timeout: 2000,
