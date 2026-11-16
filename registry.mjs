@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -64,6 +64,7 @@ const staffPermissions = new Map([
   ['clinician', new Set(['encounters:assigned'])],
   ...Array.from(departmentWork.keys(), role => [role, new Set(['department:work'])]),
   ['restricted', new Set()],
+  ['super_admin', new Set(['staff:review'])],
 ]);
 
 function requirePermission(permission) {
@@ -484,6 +485,19 @@ export function registryRoutes(database, origin) {
       return 201;
     });
     res.sendStatus(result);
+  }));
+  router.get('/admin/staff', requirePermission('staff:review'), route(async (req, res) => {
+    const after = req.query.after ?? '';
+    if (typeof after !== 'string' || (after && !/^[a-z0-9._-]{3,64}$/.test(after))) return res.sendStatus(400);
+    const { rows } = await database.query(
+      `SELECT s.username, s.role, s.clinician_id AS "clinicianId",
+        COALESCE((SELECT json_agg(json_build_object('name',d.name,'role',m.role) ORDER BY d.name,m.role)
+          FROM staff_department_memberships m JOIN hospital_departments d ON d.code=m.department_code
+          WHERE m.username=s.username),'[]'::json) AS departments
+       FROM registry_staff s WHERE s.username>$1 ORDER BY s.username LIMIT 51`, [after],
+    );
+    const staff = rows.slice(0, 50);
+    res.json({ staff, next: rows.length > 50 ? staff.at(-1).username : null });
   }));
   router.use((_req, res) => res.sendStatus(404));
   router.use((error, _req, res, _next) => {

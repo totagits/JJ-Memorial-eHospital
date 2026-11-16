@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 type Staff = {
   username: string;
-  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' | DepartmentRole;
+  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' | 'super_admin' | DepartmentRole;
   departments?: { code: string; name: string; role: string }[];
 };
 type DepartmentRole = 'nurse' | 'lab_technician' | 'lab_reviewer' | 'pharmacist';
@@ -338,6 +338,45 @@ function ClinicianResults() {
   </section>;
 }
 
+type StaffAccessPage = { staff: (Staff & { clinicianId: string | null })[]; next: string | null };
+
+function StaffAccessReview() {
+  const [page, setPage] = useState<StaffAccessPage | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  async function load(after = '') {
+    setBusy(true);
+    setMessage('');
+    try {
+      setPage(await request<StaffAccessPage>('/admin/staff?after=' + encodeURIComponent(after)));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Staff access review is unavailable.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <section className="space-y-4">
+    <h2 className="text-xl font-semibold">Staff access review</h2>
+    <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load()}>Load staff accounts</button>
+    <p role="status">{message}</p>
+    {page && <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-slate-100"><tr>
+          {['Username', 'Account role', 'Department assignments', 'Clinician profile'].map(label => <th key={label} scope="col" className="p-3">{label}</th>)}
+        </tr></thead>
+        <tbody>{page.staff.map(account => <tr key={account.username} className="border-t border-slate-200">
+          <th scope="row" className="p-3 font-medium">{account.username}</th>
+          <td className="p-3">{account.role.replaceAll('_', ' ')}</td>
+          <td className="p-3">{account.departments?.map(d => d.name + ' (' + d.role.replaceAll('_', ' ') + ')').join(', ') || 'None'}</td>
+          <td className="p-3">{account.clinicianId ? clinicianNames[account.clinicianId] ?? account.clinicianId : 'None'}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>}
+    {page?.next && <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load(page.next ?? '')}>Next page</button>}
+  </section>;
+}
+
 export function PatientRegistryPage() {
   const [staff, setStaff] = useState<Staff | null>(null);
   const [section, setSection] = useState('workflow');
@@ -377,7 +416,7 @@ export function PatientRegistryPage() {
     };
   }
 
-  const sections = staff && (isDepartmentRole(staff.role) ? [
+  const sections = staff && (staff.role === 'super_admin' ? [{ id: 'workflow', label: 'Staff access review' }] : isDepartmentRole(staff.role) ? [
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
@@ -431,7 +470,7 @@ export function PatientRegistryPage() {
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
             <div>
-            {isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
+            {staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
             : staff.role === 'triage' ? <AssessmentWorkspace /> : staff.role === 'clinician' ? (section === 'results' ? <ClinicianResults /> : <AssessmentWorkspace clinician />) : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (
           <div className="grid gap-5 sm:grid-cols-2">
