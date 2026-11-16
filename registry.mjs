@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -164,7 +164,10 @@ export function registryRoutes(database, origin) {
                 r.id AS "receiptId", r.recorded_at AS "paidAt"
          FROM staging_invoices i LEFT JOIN staging_receipts r ON r.invoice_id=i.id
          WHERE i.patient_mrn=$1 ORDER BY i.issued_at DESC,i.id LIMIT 100`, [patient.mrn]);
-      return { ...patient, appointments, labResults, visits, prescriptions, invoices };
+      const { rows: virtualVisits } = await client.query(
+        `SELECT id, reason, status, requested_at AS "requestedAt", starts_at AS "startsAt"
+         FROM virtual_visits WHERE patient_mrn=$1 ORDER BY requested_at DESC,id LIMIT 50`, [patient.mrn]);
+      return { ...patient, appointments, labResults, visits, prescriptions, invoices, virtualVisits };
     });
     if (!profile) return res.sendStatus(401);
     res.json(profile);
@@ -194,6 +197,20 @@ export function registryRoutes(database, origin) {
       return inserted.rowCount ? 201 : 409;
     });
     res.sendStatus(result);
+  }));
+  router.post('/patient-portal/virtual-visits', route(async (req, res) => {
+    const { reason } = req.body ?? {};
+    if (!maxText(reason, 500) || !reason) return res.sendStatus(400);
+    const result = await database.query(
+      `INSERT INTO virtual_visits(id,patient_mrn,reason)
+       SELECT $1,a.patient_mrn,$2 FROM patient_portal_sessions t
+       JOIN patient_portal_accounts a USING(username)
+       WHERE t.token_hash=$3 AND t.expires_at>now() ON CONFLICT DO NOTHING`,
+      [randomUUID(),reason,portalSession(req)]);
+    if (result.rowCount) return res.sendStatus(201);
+    const session = await database.query(
+      'SELECT 1 FROM patient_portal_sessions WHERE token_hash=$1 AND expires_at>now()', [portalSession(req)]);
+    res.sendStatus(session.rowCount ? 409 : 401);
   }));
   router.post('/patient-portal/logout', route(async (req, res) => {
     await database.query('DELETE FROM patient_portal_sessions WHERE token_hash=$1', [portalSession(req)]);
@@ -336,6 +353,39 @@ export function registryRoutes(database, origin) {
     });
     res.sendStatus(result);
   }));
+  router.get('/virtual-visits', requirePermission('schedule:manage'), route(async (_req, res) => {
+    const { rows } = await database.query(
+      `SELECT v.id,v.reason,p.first_name AS "firstName",p.last_name AS "lastName"
+       FROM virtual_visits v JOIN registry_patients p ON p.mrn=v.patient_mrn
+       WHERE v.status='requested' ORDER BY v.requested_at,v.id LIMIT 50`);
+    res.json(rows);
+  }));
+
+  router.post('/virtual-visits/:id/schedule', requirePermission('schedule:manage'), route(async (req, res) => {
+    const { clinician, startsAt } = req.body ?? {};
+    const starts = typeof startsAt === 'string' && startsAt.endsWith('Z') ? Date.parse(startsAt) : NaN;
+    if (!uuid.test(req.params.id) || !maxText(clinician, 64) || !clinician ||
+        !Number.isFinite(starts) || starts <= Date.now()) return res.sendStatus(400);
+    const result = await database.query(
+      `UPDATE virtual_visits v SET status='scheduled', starts_at=$2,
+         clinician=$3, scheduled_by=$4, scheduled_at=now()
+       WHERE v.id=$1 AND v.status='requested' AND EXISTS (
+         SELECT 1 FROM registry_staff s JOIN staff_department_memberships m USING(username)
+         WHERE s.username=$3 AND s.role='clinician' AND m.role='clinician' AND m.department_code='opd')`,
+      [req.params.id,new Date(starts).toISOString(),clinician,res.locals.staff.username]);
+    res.sendStatus(result.rowCount ? 204 : 409);
+  }));
+
+  router.get('/virtual-visits/assigned', requirePermission('encounters:assigned'), route(async (_req, res) => {
+    const { rows } = await database.query(
+      `SELECT v.id,v.reason,v.starts_at AS "startsAt",p.first_name AS "firstName",p.last_name AS "lastName"
+       FROM virtual_visits v JOIN registry_patients p ON p.mrn=v.patient_mrn
+       JOIN staff_department_memberships m ON m.username=v.clinician AND m.role='clinician' AND m.department_code='opd'
+       WHERE v.status='scheduled' AND v.clinician=$1 ORDER BY v.starts_at,v.id LIMIT 50`,
+      [res.locals.staff.username]);
+    res.json(rows);
+  }));
+
   router.use('/schedule', requirePermission('schedule:manage'));
 
   router.get('/schedule', route(async (_req, res) => {

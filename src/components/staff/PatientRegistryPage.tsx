@@ -638,6 +638,49 @@ function CashierWorkspace({ role }: { role: 'billing' | 'cashier' }) {
   </section>;
 }
 
+type VirtualVisit = { id: string; reason: string; firstName: string; lastName: string; startsAt?: string };
+
+function VirtualVisitWorkspace({ clinician }: { clinician: boolean }) {
+  const [visits, setVisits] = useState<VirtualVisit[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  async function load(visit?: VirtualVisit, form?: FormData) {
+    setBusy(true);
+    setMessage('');
+    try {
+      if (visit && form) {
+        await request('/virtual-visits/' + visit.id + '/schedule', {
+          clinician: String(form.get('clinician')).trim().toLowerCase(),
+          startsAt: String(form.get('startsAt')) + ':00Z',
+        });
+        setMessage('Virtual visit scheduled.');
+      }
+      setVisits(await request<VirtualVisit[]>(clinician ? '/virtual-visits/assigned' : '/virtual-visits'));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Virtual visits are unavailable.');
+    } finally { setBusy(false); }
+  }
+
+  return <section className="space-y-4">
+    <h2 className="text-xl font-semibold">{clinician ? 'Assigned virtual visits' : 'Virtual visit requests'}</h2>
+    <button className={scheduleButton} disabled={busy} onClick={() => void load()}>{visits ? 'Refresh' : 'Load virtual visits'}</button>
+    <p role="status">{message}</p>
+    {visits?.length === 0 && <p>No virtual visits in this queue.</p>}
+    {visits?.map(visit => <article key={visit.id} className="space-y-3 rounded-lg border border-slate-200 bg-white p-5">
+      <h3 className="font-semibold">{visit.firstName} {visit.lastName}</h3>
+      <p className="whitespace-pre-wrap break-words">{visit.reason}</p>
+      {clinician ? <p>{visit.startsAt && scheduleDate.format(new Date(visit.startsAt))} (Monrovia)</p> : <form className="space-y-3" onSubmit={event => {
+        event.preventDefault();
+        void load(visit, new FormData(event.currentTarget));
+      }}>
+        <label className="block">OPD clinician username<input name="clinician" required maxLength={64} className={scheduleInput} /></label>
+        <label className="block">Date and time (Monrovia)<input name="startsAt" required type="datetime-local" className={scheduleInput} /></label>
+        <button className={scheduleButton} disabled={busy}>Schedule virtual visit</button>
+      </form>}
+    </article>)}
+  </section>;
+}
+
 type StaffAccessPage = { staff: (Staff & { clinicianId: string | null })[]; next: string | null };
 
 function StaffAccessReview() {
@@ -720,8 +763,8 @@ export function PatientRegistryPage() {
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
-    { id: 'notifications', label: 'Appointment notifications' },
-  ] : staff.role === 'clinician' ? clinicianWorkstations : staff.role === 'restricted' ? [] : [
+    { id: 'notifications', label: 'Appointment notifications' }, { id: 'virtual', label: 'Virtual visit scheduling' },
+  ] : staff.role === 'clinician' ? [...clinicianWorkstations, { id: 'virtual', label: 'Virtual Care & Telehealth', available: true }] : staff.role === 'restricted' ? [] : [
     { id: 'workflow', label: staff.role === 'viewer' ? 'Patient lookup' : staff.role === 'triage' ? 'Triage queue' : 'Assigned encounters' },
   ]);
 
@@ -773,6 +816,7 @@ export function PatientRegistryPage() {
             {staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
             : staff.role === 'registrar' && section === 'notifications' ? <AppointmentNotifications />
+            : section === 'virtual' && (staff.role === 'registrar' || staff.role === 'clinician') ? <VirtualVisitWorkspace clinician={staff.role === 'clinician'} />
             : staff.role === 'triage' ? <AssessmentWorkspace /> : staff.role === 'clinician' ? (section === 'results' ? <ClinicianResults /> : <AssessmentWorkspace clinician />) : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (
           <div className="grid gap-5 sm:grid-cols-2">
             {staff.role === 'registrar' && (

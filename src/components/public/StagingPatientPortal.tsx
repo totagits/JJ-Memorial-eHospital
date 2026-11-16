@@ -12,7 +12,7 @@ type Invoice = {
   receiptId: string | null;
   paidAt: string | null;
 };
-type Profile = { invoices?: Invoice[]; prescriptions?: { id: string; medication: string; directions: string; status: string }[]; visits?: Visit[]; mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
+type Profile = { virtualVisits?: { id: string; reason: string; status: string; startsAt: string | null }[]; invoices?: Invoice[]; prescriptions?: { id: string; medication: string; directions: string; status: string }[]; visits?: Visit[]; mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
 const visitTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Monrovia' });
 const endpoint = '/api/registry/patient-portal';
 const button = 'min-h-11 rounded-lg bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
@@ -84,6 +84,27 @@ export function StagingPatientPortal() {
       if (response.status !== 201) throw new Error('The request could not be saved. Refresh and try again.');
       setPatient(await profile());
       setMessage('Request sent for staff review.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The request failed.');
+    } finally { setBusy(false); }
+  }
+
+  async function requestVirtualVisit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const reason = String(new FormData(form).get('reason')).trim();
+    if (!reason) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const response = await fetch(endpoint + '/virtual-visits', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+      });
+      if (response.status === 409) throw new Error('You already have a virtual visit request awaiting scheduling.');
+      if (response.status !== 201) throw new Error('The virtual visit request could not be saved.');
+      form.reset();
+      setPatient(await profile());
+      setMessage('Virtual visit requested.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The request failed.');
     } finally { setBusy(false); }
@@ -167,7 +188,23 @@ export function StagingPatientPortal() {
           </li>)}
         </ul>}
       </section>}
-      {section !== 'health' && section !== 'history' && section !== 'appointments' && section !== 'lab' && section !== 'prescriptions' && section !== 'billing' && <section>
+      {section === 'telehealth' && <section className="space-y-4">
+        <h3 className="font-semibold">Virtual Care &amp; Telehealth</h3>
+        <form className="space-y-3" onSubmit={requestVirtualVisit}>
+          <label className="block">Reason for virtual visit
+            <textarea required maxLength={500} name="reason" className={input} rows={3} />
+          </label>
+          <button className={button} disabled={busy}>Request virtual visit</button>
+        </form>
+        <ul className="divide-y divide-slate-200">
+          {patient.virtualVisits?.map(visit => <li key={visit.id} className="space-y-1 py-3">
+            <p className="whitespace-pre-wrap break-words">{visit.reason}</p>
+            <p>{visit.startsAt ? 'Scheduled for ' + visitTime.format(new Date(visit.startsAt)) + ' (Monrovia)' : 'Awaiting scheduling'}</p>
+            {visit.startsAt && <p>Video join details are unavailable in staging.</p>}
+          </li>)}
+        </ul>
+      </section>}
+      {section !== 'health' && section !== 'history' && section !== 'appointments' && section !== 'lab' && section !== 'prescriptions' && section !== 'billing' && section !== 'telehealth' && <section>
         <h3 className="font-semibold">{workspaceSections.find(([id]) => id === section)?.[1]}</h3>
         <p className="mt-3 text-slate-700">This section is not yet available in the staging patient portal.</p>
       </section>}
