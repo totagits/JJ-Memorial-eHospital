@@ -420,6 +420,7 @@ type ResultVisit = { id: string; patientMrn: string; firstName: string; lastName
 type DepartmentResult = {
   department: string; instruction: string; recordedResult: string | null;
   completionNotes: string; actor: string; completedAt: string; patientReleasedAt: string | null;
+  prescriptionStatus: string | null; medication: string | null; directions: string | null; revision: number | null;
 };
 const resultLabels: Record<string, string> = { nursing: 'Nursing Services', lab: 'Diagnostic Laboratory', pharmacy: 'Pharmacy' };
 
@@ -452,6 +453,21 @@ function ClinicianResults() {
       } : current);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Release failed.');
+    } finally { setBusy(false); }
+  }
+
+  async function resubmitPrescription(id: string, revision: number, form: FormData) {
+    setBusy(true);
+    setMessage('');
+    try {
+      await request('/encounters/' + id + '/prescription/resubmit', {
+        revision, medication: String(form.get('medication')).trim(), directions: String(form.get('directions')).trim(),
+      });
+      setSelected(null);
+      setVisits(await request<ResultVisit[]>('/encounters/results'));
+      setMessage('Corrected prescription sent back to pharmacy.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Prescription resubmission failed.');
     } finally { setBusy(false); }
   }
 
@@ -507,6 +523,15 @@ function ClinicianResults() {
         {result.recordedResult && <p className="whitespace-pre-wrap break-words"><strong>Released result</strong>{' '}{result.recordedResult}</p>}
         <p className="whitespace-pre-wrap break-words"><strong>{result.recordedResult ? 'Review notes' : 'Completion notes'}</strong>{' '}{result.completionNotes}</p>
         <p className="text-sm">Completed by {result.actor} on {scheduleDate.format(new Date(result.completedAt))} (Monrovia)</p>
+        {result.prescriptionStatus === 'clarification' && result.revision !== null && <form className="space-y-3 rounded-md bg-slate-50 p-3" onSubmit={event => {
+          event.preventDefault();
+          void resubmitPrescription(visit.id, result.revision!, new FormData(event.currentTarget));
+        }}>
+          <h5 className="font-semibold">Correct returned prescription</h5>
+          <label className="block">Medication<input name="medication" required maxLength={160} defaultValue={result.medication ?? ''} className={scheduleInput} /></label>
+          <label className="block">Directions<textarea name="directions" required maxLength={500} defaultValue={result.directions ?? ''} className={scheduleInput} /></label>
+          <button className={scheduleButton} disabled={busy}>Resubmit to pharmacy</button>
+        </form>}
         {result.department === 'lab' && (result.patientReleasedAt
           ? <p className="font-medium text-teal-800">Released to patient portal</p>
           : <form className="space-y-3 rounded-md bg-slate-50 p-3" onSubmit={event => {
