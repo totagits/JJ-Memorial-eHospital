@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql', '021_patient_vitals.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -167,7 +167,13 @@ export function registryRoutes(database, origin) {
       const { rows: virtualVisits } = await client.query(
         `SELECT id, reason, status, requested_at AS "requestedAt", starts_at AS "startsAt"
          FROM virtual_visits WHERE patient_mrn=$1 ORDER BY requested_at DESC,id LIMIT 50`, [patient.mrn]);
-      return { ...patient, appointments, labResults, visits, prescriptions, invoices, virtualVisits };
+      const { rows: vitals } = await client.query(
+        `SELECT w.id, r.temperature_c::float8 AS "temperatureC", r.pulse_bpm AS "pulseBpm",
+                r.recorded_at AS "recordedAt"
+         FROM patient_vital_readings r JOIN department_work_items w ON w.id=r.work_id
+         JOIN scheduled_visits v ON v.id=w.visit_id WHERE v.patient_mrn=$1
+         ORDER BY r.recorded_at DESC,w.id LIMIT 100`, [patient.mrn]);
+      return { ...patient, appointments, labResults, visits, prescriptions, invoices, virtualVisits, vitals };
     });
     if (!profile) return res.sendStatus(401);
     res.json(profile);
@@ -769,9 +775,13 @@ export function registryRoutes(database, origin) {
   }));
 
   router.post('/department-work/:id/record', route(async (req, res) => {
-    const { notes, disposition } = req.body ?? {};
+    const { notes, disposition, temperatureC, pulseBpm } = req.body ?? {};
     if (!uuid.test(req.params.id) || !maxText(notes, 1500) || !notes) return res.sendStatus(400);
     const { username, role } = res.locals.staff;
+    const hasVitals = temperatureC !== undefined || pulseBpm !== undefined;
+    if (hasVitals && role !== 'nurse') return res.sendStatus(403);
+    if (hasVitals && (!Number.isFinite(temperatureC) || temperatureC < 20 || temperatureC > 50 ||
+        !Number.isInteger(pulseBpm) || pulseBpm < 1 || pulseBpm > 350)) return res.sendStatus(400);
     const { department, from, to } = departmentWork.get(role);
     const result = await transaction(database, async client => {
       const { rows: [item] } = await client.query(
@@ -789,6 +799,10 @@ export function registryRoutes(database, origin) {
       await client.query(
         'INSERT INTO department_work_events(work_id,state,notes,actor) VALUES ($1,$2,$3,$4)',
         [req.params.id, to, notes, username],
+      );
+      if (hasVitals) await client.query(
+        'INSERT INTO patient_vital_readings(work_id,temperature_c,pulse_bpm,recorded_by) VALUES ($1,$2,$3,$4)',
+        [req.params.id, temperatureC, pulseBpm, username],
       );
       await client.query('UPDATE department_work_items SET state=$2 WHERE id=$1', [req.params.id, to]);
       return 201;

@@ -331,11 +331,11 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function load(action?: { id: string; notes: string; disposition?: string }) {
+  async function load(action?: { id: string; notes: string; disposition?: string; vitals?: { temperatureC: number; pulseBpm: number } }) {
     setBusy(true);
     setMessage('');
     try {
-      if (action) await request('/department-work/' + action.id + '/record', { notes: action.notes, ...(action.disposition && { disposition: action.disposition }) });
+      if (action) await request('/department-work/' + action.id + '/record', { notes: action.notes, ...(action.disposition && { disposition: action.disposition }), ...action.vitals });
       setQueue(await request<WorkQueue>('/department-work'));
       if (action) setMessage('Work recorded.');
     } catch (error) {
@@ -358,7 +358,14 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
       event.preventDefault();
       const data = new FormData(event.currentTarget);
       const notes = String(data.get('notes')).trim();
-      void load({ id: item.id, notes, disposition: item.isPrescription ? String(data.get('disposition')) : undefined });
+      const temperature = String(data.get('temperatureC') ?? '').trim();
+      const pulse = String(data.get('pulseBpm') ?? '').trim();
+      if (Boolean(temperature) !== Boolean(pulse)) {
+        setMessage('Enter both vital readings or leave both blank.');
+        return;
+      }
+      const vitals = temperature && pulse ? { temperatureC: Number(temperature), pulseBpm: Number(pulse) } : undefined;
+      void load({ id: item.id, notes, vitals, disposition: item.isPrescription ? String(data.get('disposition')) : undefined });
     }}>
       <h3 className="font-semibold">{item.firstName} {item.lastName}</h3>
       <p className="break-all text-sm">MRN {item.patientMrn}</p>
@@ -371,6 +378,11 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
           <option value="clarification">Returned for clarification</option>
         </select>
       </label>}
+      {role === 'nurse' && <fieldset className="flex flex-wrap gap-3">
+        <legend className="font-medium">Vital readings (optional)</legend>
+        <label>Temperature (°C)<input name="temperatureC" type="number" min="20" max="50" step="0.1" className={scheduleInput} /></label>
+        <label>Pulse (bpm)<input name="pulseBpm" type="number" min="1" max="350" step="1" className={scheduleInput} /></label>
+      </fieldset>}
       <label className="block">Work notes
         <textarea name="notes" required maxLength={1500} rows={3} className="mt-1 block w-full rounded-md border border-slate-400 p-2" />
       </label>

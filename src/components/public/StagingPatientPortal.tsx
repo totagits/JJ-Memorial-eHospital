@@ -12,7 +12,7 @@ type Invoice = {
   receiptId: string | null;
   paidAt: string | null;
 };
-type Profile = { virtualVisits?: { id: string; reason: string; status: string; startsAt: string | null }[]; invoices?: Invoice[]; prescriptions?: { id: string; medication: string; directions: string; status: string }[]; visits?: Visit[]; mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
+type Profile = { vitals?: { id: string; temperatureC: number; pulseBpm: number; recordedAt: string }[]; virtualVisits?: { id: string; reason: string; status: string; startsAt: string | null }[]; invoices?: Invoice[]; prescriptions?: { id: string; medication: string; directions: string; status: string }[]; visits?: Visit[]; mrn: string; firstName: string; lastName: string; appointments: { id: string; department: string; startsAt: string; status: string; change: { kind: string; status: string } | null }[]; labResults: { id: string; summary: string; releasedAt: string }[] };
 const visitTime = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Monrovia' });
 const endpoint = '/api/registry/patient-portal';
 const button = 'min-h-11 rounded-lg bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
@@ -204,9 +204,14 @@ export function StagingPatientPortal() {
           </li>)}
         </ul>
       </section>}
-      {section !== 'health' && section !== 'history' && section !== 'appointments' && section !== 'lab' && section !== 'prescriptions' && section !== 'billing' && section !== 'telehealth' && <section>
-        <h3 className="font-semibold">{workspaceSections.find(([id]) => id === section)?.[1]}</h3>
-        <p className="mt-3 text-slate-700">This section is not yet available in the staging patient portal.</p>
+      {section === 'vitals' && <section className="space-y-3">
+        <h3 className="font-semibold">Vitals Tracker</h3>
+        {!patient.vitals?.length ? <p>No recorded vital readings.</p> : <ul className="divide-y divide-slate-200">
+          {patient.vitals.map(reading => <li key={reading.id} className="space-y-1 py-3">
+            <p>{visitTime.format(new Date(reading.recordedAt))} (Monrovia)</p>
+            <p>Temperature {reading.temperatureC.toFixed(1)} °C · Pulse {reading.pulseBpm} bpm</p>
+          </li>)}
+        </ul>}
       </section>}
       {section === 'appointments' && <section aria-labelledby="patient-appointments">
       <h3 id="patient-appointments" className="scroll-mt-24 font-semibold" tabIndex={-1}>Upcoming appointments</h3>
