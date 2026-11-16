@@ -8,6 +8,7 @@ import { DoctorsPage } from './components/public/DoctorsPage';
 import { StaffDirectoryPage } from './components/public/StaffDirectoryPage';
 import { HealthResourcesPage } from './components/public/HealthResourcesPage';
 import { ContactPage } from './components/public/ContactPage';
+import { StagingPatientPortal } from './components/public/StagingPatientPortal';
 import { PatientRegistryPage } from './components/staff/PatientRegistryPage';
 import { I18nProvider } from './services/i18nService';
 
@@ -26,7 +27,7 @@ export default function App() {
 
 function HospitalApp() {
   const [viewMode, setViewMode] = useState<'public' | 'staff'>('public');
-  const [publicTab, setPublicTab] = useState<string>('home');
+  const [publicTab, setPublicTab] = useState<string>(() => /^\/patient\/portal\/?$/.test(window.location.pathname) ? 'portal' : 'home');
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [selectedClinicianId, setSelectedClinicianId] = useState<string | undefined>(undefined);
   const [selectedDepartment, setSelectedDepartment] = useState<string | undefined>(undefined);
@@ -109,7 +110,7 @@ function HospitalApp() {
               <StaffDirectoryPage onOpenAppointmentModal={handleOpenAppointmentModal} />
             )}
             {publicTab === 'portal' && (
-              <PatientPortalView onOpenAppointmentModal={() => handleOpenAppointmentModal()} />
+              DemoPatientPortal ? <DemoPatientPortal onOpenAppointmentModal={() => handleOpenAppointmentModal()} /> : <StagingPatientPortal />
             )}
             {publicTab === 'health' && <HealthResourcesPage />}
             {publicTab === 'contact' && <ContactPage demoEnabled={demoEnabled} />}

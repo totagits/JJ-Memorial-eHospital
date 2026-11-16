@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -89,6 +89,60 @@ export function registryRoutes(database, origin) {
     const token = (req.get('cookie') || '').match(/(?:^|;\s*)__Host-jj_registry=([0-9a-f]{64})(?:;|$)/)?.[1];
     return token ? hash(token) : null;
   };
+
+  const portalCookie = '__Host-jj_patient';
+  const portalSession = req => {
+    const token = (req.get('cookie') || '').match(/(?:^|;\s*)__Host-jj_patient=([0-9a-f]{64})(?:;|$)/)?.[1];
+    return token ? hash(token) : null;
+  };
+  router.post('/patient-portal/session', route(async (req, res) => {
+    const { username, accessKey } = req.body ?? {};
+    if (typeof username !== 'string' || !/^[a-z0-9._-]{3,64}$/.test(username) ||
+        typeof accessKey !== 'string' || !/^[0-9a-f]{64}$/.test(accessKey)) return res.sendStatus(401);
+    const token = randomBytes(32).toString('hex');
+    const signedIn = await transaction(database, async client => {
+      const account = await client.query(
+        'SELECT 1 FROM patient_portal_accounts WHERE username=$1 AND key_hash=$2 FOR SHARE', [username, hash(accessKey)],
+      );
+      if (!account.rowCount) return false;
+      await client.query('DELETE FROM patient_portal_sessions WHERE expires_at<=now() OR token_hash=$1', [portalSession(req)]);
+      await client.query("INSERT INTO patient_portal_sessions VALUES($1,$2,now()+interval '1 hour')", [hash(token), username]);
+      return true;
+    });
+    if (!signedIn) return res.sendStatus(401);
+    res.cookie(portalCookie, token, { ...cookieOptions, maxAge: 3600000 }).sendStatus(204);
+  }));
+
+  router.get('/patient-portal/me', route(async (req, res) => {
+    if (Object.keys(req.query).length) return res.sendStatus(400);
+    const profile = await transaction(database, async client => {
+      const { rows: [patient] } = await client.query(
+        `SELECT a.username, p.mrn, p.first_name AS "firstName", p.last_name AS "lastName"
+         FROM patient_portal_sessions t JOIN patient_portal_accounts a USING(username)
+         JOIN registry_patients p ON p.mrn=a.patient_mrn WHERE t.token_hash=$1 AND t.expires_at>now()
+         FOR SHARE OF a`, [portalSession(req)],
+      );
+      if (!patient) return null;
+      const { rows: appointments } = await client.query(
+        `SELECT r.department, s.starts_at AS "startsAt"
+         FROM scheduled_visits v JOIN clinician_slots s ON s.id=v.slot_id
+         JOIN appointment_requests r ON r.id=v.request_id
+         WHERE v.patient_mrn=$1 AND v.status='scheduled' AND s.starts_at>=now()
+         ORDER BY s.starts_at,v.id LIMIT 50`, [patient.mrn],
+      );
+      await client.query("INSERT INTO registry_audit(actor,action,mrn) VALUES($1,'viewed',$2)", ['patient:' + patient.username, patient.mrn]);
+      delete patient.username;
+      return { ...patient, appointments };
+    });
+    if (!profile) return res.sendStatus(401);
+    res.json(profile);
+  }));
+
+  router.post('/patient-portal/logout', route(async (req, res) => {
+    await database.query('DELETE FROM patient_portal_sessions WHERE token_hash=$1', [portalSession(req)]);
+    res.clearCookie(portalCookie, cookieOptions).sendStatus(204);
+  }));
+  router.use('/patient-portal', (_req, res) => res.sendStatus(404));
 
   router.post('/session', route(async (req, res) => {
     const { username, accessKey } = req.body ?? {};
