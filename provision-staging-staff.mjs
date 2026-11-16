@@ -3,7 +3,7 @@ import pg from 'pg';
 
 const [username, role, ...assignments] = process.argv.slice(2);
 const roles = new Set(['registrar', 'viewer', 'restricted', 'triage', 'clinician',
-  'nurse', 'lab_technician', 'lab_reviewer', 'pharmacist', 'super_admin', 'cashier']);
+  'nurse', 'lab_technician', 'lab_reviewer', 'pharmacist', 'super_admin', 'cashier', 'billing']);
 const departmentForRole = new Map([
   ['nurse', 'nursing'], ['lab_technician', 'lab'], ['lab_reviewer', 'lab'], ['pharmacist', 'pharmacy'],
 ]);

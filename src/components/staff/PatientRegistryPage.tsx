@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 type Staff = {
   username: string;
-  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' | 'super_admin' | 'cashier' | DepartmentRole;
+  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' | 'super_admin' | 'cashier' | 'billing' | DepartmentRole;
   departments?: { code: string; name: string; role: string }[];
 };
 type DepartmentRole = 'nurse' | 'lab_technician' | 'lab_reviewer' | 'pharmacist';
@@ -519,7 +519,16 @@ type BillingRecord = {
   amountMinor: number; issuedAt: string; receiptId: string | null; paidAt: string | null;
 };
 
-function CashierWorkspace() {
+const billingWorkstations = [
+  ...clinicianWorkstations.filter(item => ['comms','bi','hmis','equipment','pharmacy','insurance'].includes(item.id)),
+  { id: 'workflow', label: 'Billing & Invoicing', available: true },
+  { id: 'ledger', label: 'General Ledger & Accounts' },
+  { id: 'inventory', label: 'Inventory & Procurement' },
+  { id: 'hr', label: 'HR, Staff & Payroll' },
+  ...clinicianWorkstations.filter(item => ['rosters','facilities','quality'].includes(item.id)),
+];
+
+function CashierWorkspace({ role }: { role: 'billing' | 'cashier' }) {
   const [mrn, setMrn] = useState('');
   const [records, setRecords] = useState<BillingRecord[]>([]);
   const [document, setDocument] = useState<{ record: BillingRecord; receipt: boolean } | null>(null);
@@ -541,11 +550,11 @@ function CashierWorkspace() {
 
   return <section className="space-y-4">
     <style>{'@media print { body:has(#billing-document) * { visibility: hidden; } #billing-document, #billing-document * { visibility: visible !important; } #billing-document { position: absolute; inset: 0 auto auto 0; width: 100%; } }'}</style>
-    <h2 className="text-xl font-semibold">Cashier workstation</h2>
+    <h2 className="text-xl font-semibold">Billing &amp; Invoicing</h2>
     <form className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={event => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
-      if ((event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'lookup') {
+      if (role === 'cashier' || (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'lookup') {
         void run();
         return;
       }
@@ -567,10 +576,12 @@ function CashierWorkspace() {
         setMrn(event.target.value); setRecords([]); setDocument(null);
       }} required maxLength={36} className={scheduleInput} /></label>
       <button disabled={busy} formNoValidate value="lookup" className={scheduleButton}>Find invoices</button>
+      {role === 'billing' && <>
       <label className="block">Charge description<input name="description" required maxLength={240} className={scheduleInput} /></label>
       <label className="block">Settlement currency<select name="currency" className={scheduleInput}><option>USD</option><option>LRD</option></select></label>
       <label className="block">Amount<input name="amount" required inputMode="decimal" className={scheduleInput} /></label>
       <button disabled={busy} className={scheduleButton}>Issue staging invoice</button>
+      </>}
     </form>
     <p role="status">{message}</p>
     {records.map(record => <article key={record.id} className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
@@ -580,7 +591,7 @@ function CashierWorkspace() {
         <button className={scheduleButton} onClick={() => setDocument({ record, receipt: false })}>View invoice</button>
         {record.receiptId
           ? <button className={scheduleButton} onClick={() => setDocument({ record, receipt: true })}>View receipt</button>
-          : <button className={scheduleButton} disabled={busy} onClick={() => void run(async () => {
+          : role === 'cashier' && <button className={scheduleButton} disabled={busy} onClick={() => void run(async () => {
               await request('/billing/invoices/' + record.id + '/payment', {});
               setDocument(null);
               return 'Full staging payment recorded.';
@@ -689,7 +700,7 @@ export function PatientRegistryPage() {
     };
   }
 
-  const sections = staff && (staff.role === 'cashier' ? [{ id: 'workflow', label: 'Invoices & receipts' }] : staff.role === 'super_admin' ? [{ id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
+  const sections = staff && (staff.role === 'billing' || staff.role === 'cashier' ? billingWorkstations : staff.role === 'super_admin' ? [{ id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
@@ -735,15 +746,15 @@ export function PatientRegistryPage() {
         ) : (
           <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)]">
             <nav aria-label="Staff workspace" className="self-start rounded-lg border border-slate-200 bg-white p-3">
-              <p className="mb-2 px-2 text-sm font-semibold">{staff.role === 'clinician' ? 'Clinician workstations' : staff.role === 'pharmacist' ? 'Pharmacy workstations' : 'Workspace'}</p>
+              <p className="mb-2 px-2 text-sm font-semibold">{staff.role === 'clinician' ? 'Clinician workstations' : staff.role === 'pharmacist' ? 'Pharmacy workstations' : staff.role === 'billing' || staff.role === 'cashier' ? 'Billing workstations' : 'Workspace'}</p>
               {sections?.map(item => <button key={item.id} type="button" aria-current={(section === item.id || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'page' : undefined}
-                disabled={'available' in item && !item.available || staff.role === 'clinician' && !('available' in item)}
+                disabled={'available' in item && !item.available || ['clinician', 'billing', 'cashier'].includes(staff.role) && !('available' in item)}
                 className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + ((section === item.id || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
                 onClick={() => setSection(item.id)}>{item.label}</button>)}
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
             <div>
-            {staff.role === 'cashier' ? <CashierWorkspace /> : staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
+            {staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
             : staff.role === 'registrar' && section === 'notifications' ? <AppointmentNotifications />
             : staff.role === 'triage' ? <AssessmentWorkspace /> : staff.role === 'clinician' ? (section === 'results' ? <ClinicianResults /> : <AssessmentWorkspace clinician />) : staff.role === 'restricted' ? <p>Your staff role has no patient registry access.</p> : (

@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -62,7 +62,8 @@ const staffPermissions = new Map([
   ['viewer', new Set(['patients:read'])],
   ['triage', new Set(['triage:manage'])],
   ['clinician', new Set(['encounters:assigned'])],
-  ['cashier', new Set(['billing:manage'])],
+  ['cashier', new Set(['billing:read', 'billing:payment'])],
+  ['billing', new Set(['billing:read', 'billing:issue'])],
   ...Array.from(departmentWork.keys(), role => [role, new Set(['department:work'])]),
   ['restricted', new Set()],
   ['super_admin', new Set(['staff:review'])],
@@ -744,7 +745,7 @@ export function registryRoutes(database, origin) {
     });
     res.sendStatus(result);
   }));
-  router.use('/billing', requirePermission('billing:manage'));
+  router.use('/billing', requirePermission('billing:read'));
   router.get('/billing/:mrn', route(async (req, res) => {
     if (!uuid.test(req.params.mrn)) return res.sendStatus(400);
     const { rows } = await database.query(
@@ -756,7 +757,7 @@ export function registryRoutes(database, origin) {
     res.json(rows);
   }));
 
-  router.post('/billing/invoices', route(async (req, res) => {
+  router.post('/billing/invoices', requirePermission('billing:issue'), route(async (req, res) => {
     const { id, mrn, currency, description, amountMinor } = req.body ?? {};
     if (!uuid.test(id ?? '') || !uuid.test(mrn ?? '') || !['USD','LRD'].includes(currency) ||
         !maxText(description, 240) || !description || !Number.isSafeInteger(amountMinor) ||
@@ -776,7 +777,7 @@ export function registryRoutes(database, origin) {
     res.sendStatus(result);
   }));
 
-  router.post('/billing/invoices/:id/payment', route(async (req, res) => {
+  router.post('/billing/invoices/:id/payment', requirePermission('billing:payment'), route(async (req, res) => {
     if (!uuid.test(req.params.id)) return res.sendStatus(400);
     const result = await transaction(database, async client => {
       const { rowCount } = await client.query(
