@@ -6,6 +6,18 @@ const endpoint = '/api/registry/patient-portal';
 const button = 'min-h-11 rounded-lg bg-teal-800 px-4 font-semibold text-white disabled:opacity-50';
 const input = 'mt-1 block min-h-11 w-full rounded-md border border-slate-400 px-3';
 
+const workspaceSections = [
+  ['health', 'My Health Dashboard'],
+  ['history', 'Medical History & Visits'],
+  ['appointments', 'Appointments'],
+  ['lab', 'Diagnostic Reports'],
+  ['prescriptions', 'Prescriptions'],
+  ['billing', 'Invoices & Receipts'],
+  ['telehealth', 'Virtual Care & Telehealth'],
+  ['vitals', 'Vitals Tracker'],
+] as const;
+type WorkspaceSection = typeof workspaceSections[number][0];
+
 async function profile(): Promise<Profile | null> {
   const response = await fetch(endpoint + '/me');
   if (response.status === 401) return null;
@@ -17,6 +29,7 @@ export function StagingPatientPortal() {
   const [patient, setPatient] = useState<Profile | null>(null);
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState('');
+  const [section, setSection] = useState<WorkspaceSection>('health');
 
   useEffect(() => {
     let active = true;
@@ -70,6 +83,7 @@ export function StagingPatientPortal() {
       const response = await fetch(endpoint + '/logout', { method: 'POST' });
       if (!response.ok) throw new Error();
       setPatient(null);
+      setSection('health');
     } catch { setMessage('Sign-out failed. Please try again.'); }
     finally { setBusy(false); }
   }
@@ -86,7 +100,32 @@ export function StagingPatientPortal() {
         </div>
         <button type="button" disabled={busy} className={button} onClick={() => void signOut()}>Sign out</button>
       </div>
-      <h3 className="font-semibold">Upcoming appointments</h3>
+      <nav aria-label="Patient workspace" className="flex flex-wrap gap-2 border-y border-slate-200 py-3">
+        {workspaceSections.map(([id, label]) => {
+          const count = id === 'appointments' ? patient.appointments.length : id === 'lab' ? patient.labResults?.length ?? 0 : null;
+          return <button key={id} type="button" aria-current={section === id ? 'page' : undefined}
+            className={section === id ? button : 'min-h-11 rounded-lg px-3 text-teal-800 hover:bg-teal-50'}
+            onClick={() => setSection(id)}>{label}{count === null ? '' : ` (${count})`}</button>;
+        })}
+      </nav>
+      {section === 'health' && <section>
+        <h3 className="font-semibold">My Health Dashboard</h3>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className={button} onClick={() => setSection('appointments')}>View appointments</button>
+          <button type="button" className={button} onClick={() => setSection('lab')}>View diagnostic reports</button>
+        </div>
+      </section>}
+      {section !== 'health' && section !== 'appointments' && section !== 'lab' && <section>
+        <h3 className="font-semibold">{workspaceSections.find(([id]) => id === section)?.[1]}</h3>
+        {section === 'history' && <label className="mt-3 block max-w-xs">Encounter Type
+          <select className={input} disabled>
+            {['All Visits', 'OPD', 'Emergency', 'Inpatient', 'Follow-up'].map(type => <option key={type}>{type}</option>)}
+          </select>
+        </label>}
+        <p className="mt-3 text-slate-700">This section is not yet available in the staging patient portal.</p>
+      </section>}
+      {section === 'appointments' && <section aria-labelledby="patient-appointments">
+      <h3 id="patient-appointments" className="scroll-mt-24 font-semibold" tabIndex={-1}>Upcoming appointments</h3>
       {patient.appointments.length === 0 ? <p>No upcoming appointments.</p> : <ul className="divide-y divide-slate-200">
         {patient.appointments.map(item => <li key={item.id} className="space-y-2 py-3">
           <p className="font-medium">{item.department}</p><p>{visitTime.format(new Date(item.startsAt))} (Monrovia)</p>
@@ -98,15 +137,16 @@ export function StagingPatientPortal() {
           </div>}
         </li>)}
       </ul>}
-      <section className="border-t border-slate-200 pt-4">
-        <h3 className="font-semibold">Released laboratory summaries</h3>
+      </section>}
+      {section === 'lab' && <section aria-labelledby="patient-lab-results" className="border-t border-slate-200 pt-4">
+        <h3 id="patient-lab-results" className="scroll-mt-24 font-semibold" tabIndex={-1}>Released laboratory summaries</h3>
         {!patient.labResults?.length ? <p className="mt-2">No released laboratory summaries.</p> : <ul className="divide-y divide-slate-200">
           {patient.labResults.map(result => <li key={result.id} className="space-y-1 py-3">
             <p className="text-sm text-slate-600">Released {visitTime.format(new Date(result.releasedAt))} (Monrovia)</p>
             <p className="whitespace-pre-wrap break-words">{result.summary}</p>
           </li>)}
         </ul>}
-      </section>
+      </section>}
     </div> : <form className="max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-5" onSubmit={signIn}>
       <h2 className="text-xl font-semibold">Patient sign-in</h2>
       <label className="block">Username<input className={input} name="username" autoComplete="username" maxLength={64} required /></label>
