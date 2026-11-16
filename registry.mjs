@@ -6,6 +6,7 @@ const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', 
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
+const schedulableClinicians = new Set([...clinicians, 'USR-BETTY-BODUO']);
 const times = new Set(['09:00 AM', '10:00 AM', '11:30 AM', '02:00 PM', '03:30 PM']);
 const maxText = (value, limit) => typeof value === 'string' && value === value.trim()
   && value.length <= limit && !value.includes('\0');
@@ -241,7 +242,7 @@ export function registryRoutes(database, origin) {
 
   router.post('/schedule/slots', route(async (req, res) => {
     const { clinicianId, date, timeSlot } = req.body ?? {};
-    if (!clinicians.has(clinicianId) || !times.has(timeSlot) ||
+    if (!schedulableClinicians.has(clinicianId) || !times.has(timeSlot) ||
         typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.sendStatus(400);
     const [clock, period] = timeSlot.split(' ');
     const [hour, minute] = clock.split(':').map(Number);
@@ -263,14 +264,15 @@ export function registryRoutes(database, origin) {
     const username = res.locals.staff.username;
     const result = await transaction(database, async client => {
       const { rows: [request] } = await client.query(
-        'SELECT status, patient_mrn FROM appointment_requests WHERE id=$1 FOR UPDATE', [requestId],
+        'SELECT status, patient_mrn, department FROM appointment_requests WHERE id=$1 FOR UPDATE', [requestId],
       );
       if (!request) return 404;
       const { rows: [existing] } = await client.query('SELECT slot_id FROM scheduled_visits WHERE request_id=$1', [requestId]);
       if (existing) return existing.slot_id === slotId ? 204 : 409;
       if (request.status !== 'contacted' || !request.patient_mrn) return 409;
-      const slot = await client.query('SELECT 1 FROM clinician_slots WHERE id=$1 AND starts_at>now() FOR UPDATE', [slotId]);
+      const slot = await client.query('SELECT clinician_id FROM clinician_slots WHERE id=$1 AND starts_at>now() FOR UPDATE', [slotId]);
       if (!slot.rowCount) return 409;
+      if (slot.rows[0].clinician_id === 'USR-BETTY-BODUO' && request.department !== 'Internal Medicine & OPD') return 409;
       const visitId = randomUUID();
       const inserted = await client.query(
         'INSERT INTO scheduled_visits (id,request_id,slot_id,patient_mrn,scheduled_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',

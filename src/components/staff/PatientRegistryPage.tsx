@@ -35,6 +35,7 @@ type ScheduleSlot = {
 
 const clinicianNames: Record<string, string> = {
   'USR-001': 'Dr. J. Saydee Kollie',
+  'USR-BETTY-BODUO': 'Betty Boduo (OPD)',
   'USR-002': 'Dr. Evelyn Sirleaf-Gbotoe',
 };
 const scheduleTimes = ['09:00 AM', '10:00 AM', '11:30 AM', '02:00 PM', '03:30 PM'];
@@ -143,7 +144,7 @@ function AppointmentQueue() {
           <li key={item.id} className="rounded-md border border-slate-200 p-4">
             <h3 className="font-semibold">{item.firstName} {item.lastName}</h3>
             <p>{item.department} | {item.date} at {item.timeSlot} | {item.status}</p>
-            <p>Preferred clinician {item.clinicianId === 'USR-001' ? 'Dr. J. Saydee Kollie' : item.clinicianId === 'USR-002' ? 'Dr. Evelyn Sirleaf-Gbotoe' : 'None'}</p>
+            <p>Preferred clinician {item.clinicianId ? clinicianNames[item.clinicianId] ?? item.clinicianId : 'None'}</p>
             <p className="break-words">{item.phone}{item.email && ' | ' + item.email}</p>
             <p className="break-words">{item.reason}</p>
             <p className="break-all text-xs text-slate-600">Reference {item.id}</p>
@@ -176,7 +177,7 @@ function AppointmentQueue() {
                 <label>Open slot
                   <select name="slotId" required className={scheduleInput}>
                     <option value="">Select a slot</option>
-                    {slots.filter(slot => !slot.visitId).map(slot => <option key={slot.id} value={slot.id}>{describeSlot(slot)}</option>)}
+                    {slots.filter(slot => !slot.visitId && (slot.clinicianId !== 'USR-BETTY-BODUO' || item.department === 'Internal Medicine & OPD')).map(slot => <option key={slot.id} value={slot.id}>{describeSlot(slot)}</option>)}
                   </select>
                 </label>
                 <button disabled={busy} className={scheduleButton}>Schedule visit</button>

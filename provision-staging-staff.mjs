@@ -12,7 +12,8 @@ const departments = [...new Set(assignments)];
 const scoped = departmentForRole.has(role) || role === 'triage' || role === 'clinician';
 
 if (!/^[a-z0-9._-]{3,64}$/.test(username ?? '') || !roles.has(role) ||
-    (role === 'clinician' && !['USR-001', 'USR-002'].includes(clinicianId)) ||
+    (role === 'clinician' && !['USR-001', 'USR-002', 'USR-BETTY-BODUO'].includes(clinicianId)) ||
+    (clinicianId === 'USR-BETTY-BODUO' && (departments.length !== 1 || departments[0] !== 'opd')) ||
     scoped !== Boolean(departments.length) ||
     (departmentForRole.has(role) && (departments.length !== 1 || departments[0] !== departmentForRole.get(role))) ||
     departments.some(code => !/^[a-z]+$/.test(code))) {
