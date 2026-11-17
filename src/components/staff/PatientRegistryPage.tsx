@@ -262,6 +262,7 @@ type TriageVisit = { id: string; patientMrn: string; firstName: string; lastName
 
 function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
   const endpoint = clinician ? '/encounters' : '/triage';
+  const [selectedVisit, setSelectedVisit] = useState('');
   const [queue, setQueue] = useState<TriageVisit[] | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -280,13 +281,29 @@ function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
     }
   }
 
+  const selected = queue?.find(visit => visit.id === selectedVisit) ?? queue?.[0];
+
   return (
     <section className="space-y-4">
       <h2 className="text-xl font-semibold">{clinician ? 'Clinician workspace' : 'Triage workspace'}</h2>
       <button type="button" disabled={busy} className={scheduleButton} onClick={() => void update()}>Refresh waiting queue</button>
       <p role="status">{message}</p>
       {queue?.length === 0 && <p>{clinician ? 'No assigned visits ready for consultation.' : 'No patients waiting for triage.'}</p>}
-      {queue?.map(visit => (
+      {selected && <div className="grid gap-5 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,2fr)]">
+        <aside className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+          <h3 className="font-semibold">{clinician ? 'Assigned encounters' : 'Triage worklist'}</h3>
+          <ul className="space-y-2">
+            {queue?.map(visit => <li key={visit.id}>
+              <button type="button" aria-pressed={selected.id === visit.id} onClick={() => setSelectedVisit(visit.id)}
+                className={'w-full rounded-lg border p-3 text-left ' + (selected.id === visit.id ? 'border-teal-500 bg-teal-50' : 'border-slate-200 hover:bg-slate-50')}>
+                <span className="block font-semibold">{visit.firstName} {visit.lastName}</span>
+                <span className="block text-sm text-slate-600">{visit.department}</span>
+                <span className="block break-all text-xs text-slate-600">{visit.patientMrn}</span>
+              </button>
+            </li>)}
+          </ul>
+        </aside>
+        {[selected].map(visit => (
         <form key={visit.id} className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={event => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
@@ -323,11 +340,14 @@ function AssessmentWorkspace({ clinician = false }: { clinician?: boolean }) {
           <button disabled={busy} className={scheduleButton}>{clinician ? 'Complete encounter' : 'Record assessment'}</button>
         </form>
       ))}
+      </div>}
     </section>
   );
 }
 
 function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analytics: boolean }) {
+  const [selectedId, setSelectedId] = useState('');
+  const [search, setSearch] = useState('');
   const [queue, setQueue] = useState<WorkQueue | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -344,6 +364,12 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
     } finally { setBusy(false); }
   }
 
+  const query = search.trim().toLowerCase();
+  const visibleItems = queue?.items.filter(item =>
+    [item.firstName + ' ' + item.lastName, item.patientMrn, item.instruction].some(value => value.toLowerCase().includes(query))
+  ) ?? [];
+  const selected = visibleItems.find(item => item.id === selectedId) ?? visibleItems[0];
+
   return <section className="space-y-4">
     <h2 className="text-xl font-semibold">{departmentLabels[role].title} {analytics ? 'analytics' : 'work queue'}</h2>
     <button type="button" className={scheduleButton} disabled={busy} onClick={() => void load()}>
@@ -355,7 +381,25 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
       <div className="rounded-lg border border-slate-200 bg-white p-5"><dt>Completed in department</dt><dd className="text-3xl font-bold">{queue.counts.completed}</dd></div>
     </dl>}
     {!analytics && queue?.items.length === 0 && <p>No work awaiting this role.</p>}
-    {!analytics && queue?.items.map(item => <form key={item.id} className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={event => {
+    {!analytics && queue && queue.items.length > 0 && <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,2fr)]">
+      <aside className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+        <h3 className="font-semibold">Worklist ({visibleItems.length})</h3>
+        <label className="block text-sm font-medium">Search worklist
+          <input type="search" className={scheduleInput + ' w-full'} value={search} onChange={event => setSearch(event.target.value)} />
+        </label>
+        {visibleItems.length === 0 && <p className="text-sm text-slate-600">No matching work items.</p>}
+        <ul className="space-y-2">
+          {visibleItems.map(item => <li key={item.id}>
+            <button type="button" aria-pressed={selected?.id === item.id} onClick={() => setSelectedId(item.id)}
+              className={'w-full rounded-lg border p-3 text-left ' + (selected?.id === item.id ? 'border-teal-500 bg-teal-50' : 'border-slate-200 hover:bg-slate-50')}>
+              <span className="block font-semibold">{item.firstName} {item.lastName}</span>
+              <span className="block break-all text-xs text-slate-600">{item.patientMrn}</span>
+              <span className="mt-1 line-clamp-2 block break-words text-sm">{item.instruction}</span>
+            </button>
+          </li>)}
+        </ul>
+      </aside>
+      {selected && [selected].map(item => <form key={item.id} className="space-y-3 rounded-lg border border-slate-200 bg-white p-5" onSubmit={event => {
       event.preventDefault();
       const data = new FormData(event.currentTarget);
       const notes = String(data.get('notes')).trim();
@@ -389,6 +433,7 @@ function DepartmentWorkspace({ role, analytics }: { role: DepartmentRole; analyt
       </label>
       <button disabled={busy} className={scheduleButton}>{item.isPrescription ? 'Record prescription disposition' : departmentLabels[role].action}</button>
     </form>)}
+    </div>}
   </section>;
 }
 
@@ -727,6 +772,71 @@ const roleTitles: Record<Staff['role'], string> = {
 
 type DashboardMetric = { label: string; value: string | number };
 
+type WorkspaceTrend = { label: string; days: { day: string; value: number }[] };
+
+function ActivityTrend() {
+  const [trend, setTrend] = useState<WorkspaceTrend | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    request<WorkspaceTrend>('/workspace/trends').then(value => { if (active) setTrend(value); })
+      .catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, []);
+
+  const peak = Math.max(1, ...(trend?.days.map(day => day.value) ?? []));
+  return <figure className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <figcaption className="font-semibold">{trend?.label ?? 'Activity trend'}</figcaption>
+    <p className="mt-1 text-sm text-slate-600">Last 7 days · Monrovia</p>
+    {failed ? <p role="alert">Activity trend unavailable.</p> : !trend ? <p role="status">Loading trend...</p> :
+      <ol className="mt-4 space-y-2">
+        {trend.days.map(day => <li key={day.day} className="grid grid-cols-[4.5rem_1fr_2rem] items-center gap-3 text-sm">
+          <time dateTime={day.day}>{day.day.slice(5)}</time>
+          <div aria-hidden="true" className="h-3 rounded-full bg-slate-100"><div style={{ width: (day.value / peak * 100) + '%' }} className="h-full rounded-full bg-teal-700" /></div>
+          <span className="text-right tabular-nums">{day.value}</span>
+        </li>)}
+      </ol>}
+  </figure>;
+}
+
+function ManagementWorkspace() {
+  const [metrics, setMetrics] = useState<DashboardMetric[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    request<DashboardMetric[]>('/workspace/management').then(value => { if (active) setMetrics(value); })
+      .catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, []);
+  return <section className="space-y-5">
+    <header className="rounded-2xl bg-slate-900 p-6 text-white">
+      <h2 className="text-2xl font-bold">Management</h2>
+      <p className="mt-2 text-sm text-slate-300">Staging operational overview</p>
+    </header>
+    {failed ? <p role="alert">Management metrics unavailable.</p> : !metrics ? <p role="status">Loading metrics...</p> :
+      <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {metrics.map(metric => <div key={metric.label} className="rounded-xl border border-slate-200 bg-white p-5">
+          <dt className="text-sm text-slate-600">{metric.label}</dt>
+          <dd className="mt-2 text-3xl font-bold tabular-nums">{metric.value}</dd>
+        </div>)}
+      </dl>}
+    <ActivityTrend />
+    <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <h3 className="font-semibold">Data sources</h3>
+      <dl className="mt-3 divide-y divide-slate-200">
+        {Object.entries({
+          'Bed occupancy': 'Requires ward, bed and admission records.',
+          'Inventory': 'Requires stock and movement records.',
+          'Payer mix': 'Requires invoice payer and insurance claim records.',
+          'Facility telemetry': 'Requires a connected monitoring feed.',
+        }).map(([label, detail]) => <div key={label} className="grid gap-1 py-3 sm:grid-cols-2">
+          <dt className="font-medium">{label}</dt><dd className="text-sm text-slate-600">{detail}</dd>
+        </div>)}
+      </dl>
+    </section>
+  </section>;
+}
+
 function WorkspaceOverview({ staff, onOpen }: { staff: Staff; onOpen: () => void }) {
   const [metrics, setMetrics] = useState<DashboardMetric[] | null>(null);
   const [error, setError] = useState(false);
@@ -775,6 +885,7 @@ function WorkspaceOverview({ staff, onOpen }: { staff: Staff; onOpen: () => void
         <dd className="mt-1 text-3xl font-bold tabular-nums text-slate-950">{metric.value}</dd>
       </div>)}
     </dl>
+    <ActivityTrend />
   </section>;
 }
 
@@ -856,7 +967,7 @@ export function PatientRegistryPage() {
     };
   }
 
-  const sections = staff && (staff.role === 'billing' || staff.role === 'cashier' ? billingWorkstations : staff.role === 'super_admin' ? [{ id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
+  const sections = staff && (staff.role === 'billing' || staff.role === 'cashier' ? billingWorkstations : staff.role === 'super_admin' ? [{ id: 'management', label: 'Management' }, { id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
@@ -915,7 +1026,7 @@ export function PatientRegistryPage() {
             <div>
             {section === 'overview' && staff.role !== 'viewer' && staff.role !== 'restricted'
               ? <WorkspaceOverview key={staff.username} staff={staff} onOpen={() => setSection(staff.role === 'pharmacist' ? 'pharmacy' : 'workflow')} />
-              : staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
+              : staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? (section === 'management' ? <ManagementWorkspace /> : <StaffAccessReview />) : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
             : staff.role === 'registrar' && section === 'notifications' ? <AppointmentNotifications />
             : section === 'virtual' && (staff.role === 'registrar' || staff.role === 'clinician') ? <VirtualVisitWorkspace clinician={staff.role === 'clinician'} />

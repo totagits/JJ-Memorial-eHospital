@@ -355,6 +355,62 @@ export function registryRoutes(database, origin) {
     res.sendStatus(403);
   }));
 
+  router.get('/workspace/trends', route(async (_req, res) => {
+    const { role, username } = res.locals.staff;
+    const department = departmentWork.get(role);
+    const trends = department ? {
+      label: 'Work events you recorded',
+      sql: `SELECT e.occurred_at AS stamp FROM department_work_events e
+            JOIN department_work_items w ON w.id=e.work_id
+            JOIN staff_department_memberships m ON m.department_code=w.department_code AND m.username=$1 AND m.role=$2
+            WHERE e.actor=$1 AND w.department_code=$3
+            UNION ALL
+            SELECT r.returned_at AS stamp FROM prescription_revisions r
+            JOIN department_work_items w ON w.id=r.work_id
+            JOIN staff_department_memberships m ON m.department_code=w.department_code AND m.username=$1 AND m.role=$2
+            WHERE r.returned_by=$1 AND w.department_code=$3`,
+      params: [username,role,department.department],
+    } : {
+      clinician: { label: 'Encounters you recorded', sql: 'SELECT recorded_at AS stamp FROM clinician_encounters WHERE recorded_by=$1', params: [username] },
+      triage: { label: 'Triage assessments you recorded', sql: 'SELECT recorded_at AS stamp FROM triage_assessments WHERE recorded_by=$1', params: [username] },
+      registrar: { label: 'Patient registrations you recorded', sql: "SELECT occurred_at AS stamp FROM registry_audit WHERE actor=$1 AND action='registered'", params: [username] },
+      billing: { label: 'Invoices you issued', sql: 'SELECT issued_at AS stamp FROM staging_invoices WHERE issued_by=$1', params: [username] },
+      cashier: { label: 'Payments you recorded', sql: 'SELECT recorded_at AS stamp FROM staging_receipts WHERE recorded_by=$1', params: [username] },
+      super_admin: { label: 'Registry audit events', sql: 'SELECT occurred_at AS stamp FROM registry_audit', params: [] },
+    }[role];
+    if (!trends) return res.sendStatus(403);
+    const { rows } = await database.query(
+      `WITH days AS (
+         SELECT (now() AT TIME ZONE 'Africa/Monrovia')::date - offset_day AS day
+         FROM generate_series(0,6) AS offsets(offset_day)
+       ), counts AS (
+         SELECT (stamp AT TIME ZONE 'Africa/Monrovia')::date AS day, count(*)::int AS total
+         FROM (${trends.sql}) events
+         WHERE stamp >= ((SELECT min(day) FROM days)::timestamp AT TIME ZONE 'Africa/Monrovia')
+         GROUP BY 1
+       )
+       SELECT days.day::text AS day, COALESCE(counts.total,0) AS value
+       FROM days LEFT JOIN counts USING (day) ORDER BY days.day`, trends.params);
+    res.json({ label: trends.label, days: rows });
+  }));
+
+  router.get('/workspace/management', requirePermission('staff:review'), route(async (_req, res) => {
+    const { rows: [counts] } = await database.query(
+      `SELECT (SELECT count(*)::int FROM scheduled_visits WHERE status='waiting_for_triage') AS triage,
+              (SELECT count(*)::int FROM scheduled_visits WHERE status='completed') AS encounters,
+              (SELECT count(*)::int FROM department_work_items WHERE state<>'completed') AS department,
+              (SELECT count(*)::int FROM virtual_visits WHERE status='requested') AS virtual,
+              (SELECT count(*)::int FROM staging_invoices i WHERE NOT EXISTS
+                (SELECT 1 FROM staging_receipts r WHERE r.invoice_id=i.id)) AS invoices`);
+    res.json([
+      { label: 'Patients waiting for triage', value: counts.triage },
+      { label: 'Completed encounters', value: counts.encounters },
+      { label: 'Open department work items', value: counts.department },
+      { label: 'Virtual visits awaiting scheduling', value: counts.virtual },
+      { label: 'Outstanding invoices', value: counts.invoices },
+    ]);
+  }));
+
   router.get('/session', route(async (_req, res) => {
     const staff = res.locals.staff;
     const { rows } = await database.query(
