@@ -1,3 +1,4 @@
+import { Activity, ArrowUpRight, LayoutDashboard } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 type Staff = {
@@ -718,6 +719,65 @@ function VirtualVisitWorkspace({ clinician }: { clinician: boolean }) {
   </section>;
 }
 
+const roleTitles: Record<Staff['role'], string> = {
+  clinician: 'Clinician', nurse: 'Nursing', triage: 'Triage', lab_technician: 'Laboratory Technician',
+  lab_reviewer: 'LIS Review', pharmacist: 'Pharmacy', super_admin: 'Administration',
+  billing: 'Billing', cashier: 'Cashier', registrar: 'Registration', viewer: 'Patient Lookup', restricted: 'Staff',
+};
+
+type DashboardMetric = { label: string; value: string | number };
+
+function WorkspaceOverview({ staff, onOpen }: { staff: Staff; onOpen: () => void }) {
+  const [metrics, setMetrics] = useState<DashboardMetric[] | null>(null);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    request<DashboardMetric[]>('/workspace/metrics').then(rows => {
+      if (active) setMetrics(rows);
+    }).catch(() => {
+      if (active) setError(true);
+    });
+    return () => { active = false; };
+  }, []);
+
+  async function refresh() {
+    setLoading(true);
+    setError(false);
+    try { setMetrics(await request<DashboardMetric[]>('/workspace/metrics')); }
+    catch { setError(true); }
+    finally { setLoading(false); }
+  }
+
+  return <section className="space-y-5" aria-labelledby="workspace-overview">
+    <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-slate-900 p-6 text-white sm:p-8">
+      <div>
+        <p className="text-sm font-medium text-teal-300">Staging workspace</p>
+        <h2 id="workspace-overview" className="mt-2 text-2xl font-bold sm:text-3xl">{roleTitles[staff.role]} overview</h2>
+        <p className="mt-2 text-sm text-slate-300">{staff.username}</p>
+      </div>
+      <button type="button" onClick={onOpen} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-teal-100 px-4 font-semibold text-teal-950">
+        Open workstation <ArrowUpRight size={16} aria-hidden="true" />
+      </button>
+    </header>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h3 className="font-semibold">Workload and activity</h3>
+      <button type="button" disabled={loading} onClick={() => void refresh()} className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold">Refresh metrics</button>
+    </div>
+    {error && <p role="alert">Metrics are temporarily unavailable.</p>}
+    {!metrics && !error && <p role="status">Loading metrics...</p>}
+    {metrics?.length === 0 && <p>No staging activity to report.</p>}
+    <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {metrics?.map(metric => <div key={metric.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <Activity size={18} className="mb-4 text-teal-700" aria-hidden="true" />
+        <dt className="text-sm font-medium text-slate-600">{metric.label}</dt>
+        <dd className="mt-1 text-3xl font-bold tabular-nums text-slate-950">{metric.value}</dd>
+      </div>)}
+    </dl>
+  </section>;
+}
+
 type StaffAccessPage = { staff: (Staff & { clinicianId: string | null })[]; next: string | null };
 
 function StaffAccessReview() {
@@ -759,7 +819,7 @@ function StaffAccessReview() {
 
 export function PatientRegistryPage() {
   const [staff, setStaff] = useState<Staff | null>(null);
-  const [section, setSection] = useState('workflow');
+  const [section, setSection] = useState('overview');
   const [patient, setPatient] = useState<Patient | null>(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(true);
@@ -809,9 +869,9 @@ export function PatientRegistryPage() {
     <main className="min-h-screen bg-slate-50 px-5 py-10 text-slate-900">
       <div className={staff ? "mx-auto max-w-7xl" : "mx-auto max-w-3xl"}>
         <a href="/" className="font-semibold text-teal-800 underline">J &amp; J Memorial homepage</a>
-        <h1 className="mt-5 text-3xl font-bold">Staging patient registry</h1>
+        <h1 className="mt-5 text-3xl font-bold">{staff ? roleTitles[staff.role] + ' workstation' : 'Staging staff access'}</h1>
         <p className="mt-2 text-slate-700">Use synthetic patient data only.</p>
-        {staff && <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        {staff && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div>
             <p>Signed in as <strong>{staff.username}</strong> ({staff.role})</p>
             {staff.departments?.some(department => department.role === staff.role)
@@ -821,7 +881,7 @@ export function PatientRegistryPage() {
           <button disabled={busy} className="min-h-11 rounded-md border border-slate-400 px-4" onClick={() => void perform(async () => {
             await request('/logout', {});
             setStaff(null);
-            setSection('workflow');
+            setSection('overview');
             setPatient(null);
           })}>Sign out</button>
         </div>}
@@ -840,9 +900,12 @@ export function PatientRegistryPage() {
             <button className={button} disabled={busy}>Sign in</button>
           </form>
         ) : (
-          <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)]">
-            <nav aria-label="Staff workspace" className="self-start rounded-lg border border-slate-200 bg-white p-3">
+          <div className="grid gap-5 xl:grid-cols-[15rem_minmax(0,1fr)]">
+            <nav aria-label="Staff workspace" className="self-start rounded-2xl border border-slate-200 bg-white p-3 shadow-sm xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto">
               <p className="mb-2 px-2 text-sm font-semibold">{staff.role === 'clinician' ? 'Clinician workstations' : staff.role === 'pharmacist' ? 'Pharmacy workstations' : staff.role === 'billing' || staff.role === 'cashier' ? 'Billing workstations' : 'Workspace'}</p>
+              {staff.role !== 'viewer' && staff.role !== 'restricted' && <button type="button" aria-current={section === 'overview' ? 'page' : undefined}
+                className={'mb-2 flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold ' + (section === 'overview' ? 'bg-teal-900 text-white' : 'text-teal-900 hover:bg-teal-50')}
+                onClick={() => setSection('overview')}><LayoutDashboard size={16} aria-hidden="true" /> Overview</button>}
               {sections?.map(item => <button key={item.id} type="button" aria-current={(section === item.id || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'page' : undefined}
                 disabled={'available' in item && !item.available || ['clinician', 'billing', 'cashier'].includes(staff.role) && !('available' in item)}
                 className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + ((section === item.id || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
@@ -850,7 +913,9 @@ export function PatientRegistryPage() {
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
             <div>
-            {staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
+            {section === 'overview' && staff.role !== 'viewer' && staff.role !== 'restricted'
+              ? <WorkspaceOverview key={staff.username} staff={staff} onOpen={() => setSection(staff.role === 'pharmacist' ? 'pharmacy' : 'workflow')} />
+              : staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? <StaffAccessReview /> : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
             : staff.role === 'registrar' && section === 'notifications' ? <AppointmentNotifications />
             : section === 'virtual' && (staff.role === 'registrar' || staff.role === 'clinician') ? <VirtualVisitWorkspace clinician={staff.role === 'clinician'} />

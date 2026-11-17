@@ -123,31 +123,45 @@ export function StagingPatientPortal() {
     finally { setBusy(false); }
   }
 
-  return <section className="mx-auto max-w-3xl px-5 py-12">
+  const counts = patient ? {
+    history: patient.visits?.length ?? 0,
+    appointments: patient.appointments.length,
+    lab: patient.labResults?.length ?? 0,
+    prescriptions: patient.prescriptions?.length ?? 0,
+    billing: patient.invoices?.length ?? 0,
+    telehealth: patient.virtualVisits?.length ?? 0,
+    vitals: patient.vitals?.length ?? 0,
+  } : null;
+
+  return <section className="mx-auto max-w-6xl px-5 py-10">
     <h1 className="text-3xl font-bold">Staging patient portal</h1>
     <p className="mt-2 text-slate-700">Use synthetic patient data only.</p>
     <p role="status" className="my-4">{message || (busy ? 'Loading...' : '')}</p>
     {patient ? <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl bg-teal-950 p-5 text-white sm:p-7">
         <div>
           <h2 className="text-xl font-semibold">{patient.firstName} {patient.lastName}</h2>
-          <p className="break-all">Medical record number {patient.mrn}</p>
+          <p className="mt-1 break-all text-sm text-teal-100">Medical record number {patient.mrn}</p>
         </div>
         <button type="button" disabled={busy} className={button} onClick={() => void signOut()}>Sign out</button>
       </div>
       <nav aria-label="Patient workspace" className="flex flex-wrap gap-2 border-y border-slate-200 py-3">
         {workspaceSections.map(([id, label]) => {
-          const count = id === 'appointments' ? patient.appointments.length : id === 'lab' ? patient.labResults?.length ?? 0 : id === 'history' ? patient.visits?.length ?? 0 : id === 'prescriptions' ? patient.prescriptions?.length ?? 0 : null;
+          const count = id === 'health' ? null : counts?.[id] ?? 0;
           return <button key={id} type="button" aria-current={section === id ? 'page' : undefined}
             className={section === id ? button : 'min-h-11 rounded-lg px-3 text-teal-800 hover:bg-teal-50'}
             onClick={() => setSection(id)}>{label}{count === null ? '' : ` (${count})`}</button>;
         })}
       </nav>
-      {section === 'health' && <section>
-        <h3 className="font-semibold">My Health Dashboard</h3>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" className={button} onClick={() => setSection('appointments')}>View appointments</button>
-          <button type="button" className={button} onClick={() => setSection('lab')}>View diagnostic reports</button>
+      {section === 'health' && counts && <section aria-labelledby="patient-overview">
+        <h3 id="patient-overview" className="text-xl font-semibold">My Health Dashboard</h3>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {workspaceSections.filter(([id]) => id !== 'health').map(([id, label]) => id !== 'health' && (
+            <button key={id} type="button" onClick={() => setSection(id)} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left hover:border-teal-500 hover:bg-teal-50">
+              <span className="block text-sm font-medium text-slate-700">{label}</span>
+              <span className="mt-2 block text-2xl font-bold tabular-nums text-teal-950">{counts[id]}</span>
+            </button>
+          ))}
         </div>
       </section>}
       {section === 'history' && <section className="space-y-3">

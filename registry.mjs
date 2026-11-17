@@ -278,6 +278,83 @@ export function registryRoutes(database, origin) {
       next();
     }).catch(next);
   });
+  router.get('/workspace/metrics', route(async (_req, res) => {
+    const { role, username } = res.locals.staff;
+    if (departmentWork.has(role)) {
+      const { department, from } = departmentWork.get(role);
+      const { rows: [counts] } = await database.query(
+        `SELECT count(*) FILTER (WHERE w.state=$4)::int AS waiting,
+                count(*) FILTER (WHERE w.state='completed')::int AS completed,
+                count(*) FILTER (WHERE e.actor=$1 AND e.state=$5)::int AS personal
+         FROM department_work_items w
+         JOIN staff_department_memberships m ON m.department_code=w.department_code AND m.username=$1 AND m.role=$2
+         LEFT JOIN department_work_events e ON e.work_id=w.id AND e.state=$5
+         WHERE w.department_code=$3`, [username,role,department,from,departmentWork.get(role).to]);
+      return res.json([
+        { label: 'Awaiting your role', value: counts.waiting },
+        { label: 'Completed in department', value: counts.completed },
+        { label: 'Actions recorded by you', value: counts.personal },
+      ]);
+    }
+    if (role === 'clinician' || role === 'triage') {
+      const { rows: [counts] } = await database.query(
+        `SELECT count(*) FILTER (WHERE v.status=$3)::int AS waiting,
+                count(*) FILTER (WHERE v.status='completed')::int AS completed,
+                count(*) FILTER (WHERE t.recorded_by=$1)::int AS assessed
+         FROM scheduled_visits v JOIN clinician_slots s ON s.id=v.slot_id
+         JOIN registry_staff staff ON staff.username=$1 AND staff.role=$2
+         JOIN appointment_requests a ON a.id=v.request_id
+         JOIN appointment_department_map dm ON dm.request_department=a.department
+         JOIN staff_department_memberships m ON m.department_code=dm.department_code
+           AND m.username=staff.username AND m.role=staff.role
+         LEFT JOIN triage_assessments t ON t.visit_id=v.id
+         WHERE ($2='triage' OR s.clinician_id=staff.clinician_id)`,
+        [username,role,role === 'triage' ? 'waiting_for_triage' : 'triaged']);
+      return res.json([
+        { label: role === 'triage' ? 'Waiting for triage' : 'Ready for consultation', value: counts.waiting },
+        role === 'triage' ? { label: 'Assessments recorded by you', value: counts.assessed }
+          : { label: 'Completed assigned visits', value: counts.completed },
+      ]);
+    }
+    if (role === 'billing' || role === 'cashier') {
+      const { rows } = await database.query(
+        `SELECT i.currency, count(*)::int AS invoices, count(r.id)::int AS receipts,
+                COALESCE(sum(i.amount_minor) FILTER (WHERE r.id IS NULL),0)::text AS outstanding,
+                COALESCE(sum(i.amount_minor) FILTER (WHERE r.id IS NOT NULL),0)::text AS settled
+         FROM staging_invoices i LEFT JOIN staging_receipts r ON r.invoice_id=i.id
+         GROUP BY i.currency ORDER BY i.currency`);
+      return res.json(rows.flatMap(row => [
+        { label: row.currency + ' outstanding', value: (Number(row.outstanding)/100).toFixed(2) },
+        { label: row.currency + ' settled', value: (Number(row.settled)/100).toFixed(2) },
+        { label: row.currency + ' invoices', value: row.invoices },
+        { label: row.currency + ' receipts', value: row.receipts },
+      ]));
+    }
+    if (role === 'super_admin') {
+      const { rows: [counts] } = await database.query(
+        `SELECT (SELECT count(*)::int FROM registry_staff) AS accounts,
+                (SELECT count(*)::int FROM registry_audit WHERE action='registered') AS registrations,
+                (SELECT count(*)::int FROM registry_audit WHERE action='viewed') AS record_views`);
+      return res.json([
+        { label: 'Staff accounts', value: counts.accounts },
+        { label: 'Registration audit events', value: counts.registrations },
+        { label: 'Patient record view events', value: counts.record_views },
+      ]);
+    }
+    if (role === 'registrar') {
+      const { rows: [counts] } = await database.query(
+        `SELECT (SELECT count(*)::int FROM appointment_requests WHERE status='pending') AS pending,
+                (SELECT count(*)::int FROM scheduled_visits WHERE status='waiting_for_triage') AS waiting,
+                (SELECT count(*)::int FROM registry_audit WHERE actor=$1 AND action='registered') AS registered`, [username]);
+      return res.json([
+        { label: 'Pending appointment requests', value: counts.pending },
+        { label: 'Checked in for triage', value: counts.waiting },
+        { label: 'Registrations recorded by you', value: counts.registered },
+      ]);
+    }
+    res.sendStatus(403);
+  }));
+
   router.get('/session', route(async (_req, res) => {
     const staff = res.locals.staff;
     const { rows } = await database.query(
