@@ -148,5 +148,5 @@ function AuditVault({username,name,onTotal}:{username:string;name:string;onTotal
 }
 
 function ChartCard({title,subtitle,loaded,empty,children}:{title:string;subtitle:string;loaded:boolean;empty:boolean;children:React.ReactElement}) {
-  return <figure className={card+' min-w-0 p-5'}><figcaption className="text-sm font-bold">{title}</figcaption><p className="mb-4 mt-1 text-xs leading-5 text-slate-500">{subtitle}</p><div className="h-60 min-w-0">{!loaded?<div className="grid h-full place-items-center text-sm text-slate-400">Chart data unavailable until loaded</div>:empty?<div className="grid h-full place-items-center text-sm text-slate-400">No recorded events yet</div>:<ResponsiveContainer width="100%" height="100%">{children}</ResponsiveContainer>}</div></figure>;
+  return <figure className={card+' min-w-0 overflow-hidden p-5'}><figcaption className="text-sm font-bold">{title}</figcaption><p className="mb-4 mt-1 text-xs leading-5 text-slate-500">{subtitle}</p><div className="h-60 min-w-0">{!loaded?<div className="grid h-full place-items-center text-sm text-slate-400">Chart data unavailable until loaded</div>:empty?<div className="grid h-full place-items-center text-sm text-slate-400">No recorded events yet</div>:<ResponsiveContainer width="100%" height="100%">{children}</ResponsiveContainer>}</div></figure>;
 }
