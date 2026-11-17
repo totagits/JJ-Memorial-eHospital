@@ -416,7 +416,7 @@ export function registryRoutes(database, origin) {
 
   router.get('/workspace/security-ledger', requirePermission('management:read'), route(async (_req, res) => {
     const { rows } = await database.query(
-      'SELECT id::text,occurred_at AS "occurredAt",actor,event,outcome FROM security_ledger ORDER BY id DESC LIMIT 100');
+      'SELECT id::text,occurred_at AS "occurredAt",actor,event,outcome FROM security_ledger l ORDER BY l.id DESC LIMIT 100');
     res.json(rows);
   }));
   router.get('/workspace/security-ledger/checkpoint', requirePermission('management:read'), route(async (_req, res) => {
@@ -446,7 +446,7 @@ export function registryRoutes(database, origin) {
   }));
   router.get('/workspace/security-ledger/export', requirePermission('management:read'), route(async (_req, res) => {
     const rows = await transaction(database, async client => {
-      const result = await client.query('SELECT id::text,occurred_at,actor,event,outcome,previous_hash,entry_hash FROM security_ledger ORDER BY id LIMIT 10000');
+      const result = await client.query('SELECT id::text,occurred_at,actor,event,outcome,previous_hash,entry_hash FROM security_ledger l ORDER BY l.id LIMIT 10000');
       await client.query("INSERT INTO security_ledger(actor,event,outcome) VALUES($1,'security_ledger_export','generated')", [res.locals.staff.username]);
       return result.rows;
     });

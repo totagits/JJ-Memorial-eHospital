@@ -38,7 +38,7 @@ def remote(mode, checkpoint=None):
 
 
 def validate_anchor(checkpoint, instance):
-    if not isinstance(checkpoint, dict) or checkpoint.get('schema') != 1 or checkpoint.get('instanceId') != instance:
+    if not isinstance(checkpoint, dict) or checkpoint.get('schema') not in (1, 2) or checkpoint.get('instanceId') != instance:
         raise RuntimeError('checkpoint_identity_mismatch')
     head = checkpoint.get('headId')
     if not isinstance(head, str) or not re.fullmatch(r'0|[1-9][0-9]*', head) or int(head) > 9223372036854775807:
@@ -50,7 +50,7 @@ def validate_anchor(checkpoint, instance):
     return int(head)
 
 
-def compare(snapshot, checkpoint, instance):
+def compare(snapshot, checkpoint, instance, repair_legacy_head=False):
     if snapshot['instanceId'] != instance:
         raise RuntimeError('database_identity_mismatch')
     if snapshot['failures']:
@@ -58,7 +58,17 @@ def compare(snapshot, checkpoint, instance):
     if checkpoint is not None:
         head = validate_anchor(checkpoint, instance)
         if head and snapshot['anchorHash'] != checkpoint['headHash']:
-            raise RuntimeError('external_checkpoint_mismatch')
+            resolved = snapshot.get('resolvedAnchorId')
+            # Operator-only repair for schema-1's numeric-vs-text ORDER BY defect.
+            # The retained hash must match an internally verified ledger entry;
+            # no old object is changed or removed. Scheduled runs never use this.
+            if (repair_legacy_head and checkpoint['schema'] == 1 and resolved
+                    and int(resolved) > head and str(head) > str(resolved)):
+                snapshot['legacyHeadCorrection'] = {'claimedHeadId': str(head), 'resolvedHeadId': resolved,
+                                                    'retainedHash': checkpoint['headHash']}
+                head = int(resolved)
+            else:
+                raise RuntimeError('external_checkpoint_mismatch')
         if int(snapshot['headId']) < head:
             raise RuntimeError('ledger_truncated')
 
@@ -75,7 +85,7 @@ def record(instance, state, head=None, digest=None, key=None, error=None):
         'head_id=EXCLUDED.head_id,head_hash=EXCLUDED.head_hash,object_key=EXCLUDED.object_key,error_code=EXCLUDED.error_code;')
 
 
-def main(instance, bootstrap=False):
+def main(instance, bootstrap=False, repair_legacy_head=False):
     if not re.fullmatch('[0-9a-f-]{36}', instance):
         raise ValueError('Expected pinned registry instance UUID')
     try:
@@ -90,16 +100,19 @@ def main(instance, bootstrap=False):
             row_number() OVER (ORDER BY id) AS expected_id FROM security_ledger
         ) SELECT json_build_object(
           'instanceId',(SELECT instance_id FROM registry_instance WHERE singleton),
-          'headId',COALESCE((SELECT id::text FROM checked ORDER BY id DESC LIMIT 1),'0'),
-          'headHash',COALESCE((SELECT entry_hash FROM checked ORDER BY id DESC LIMIT 1),repeat('0',64)),
+          'headId',COALESCE((SELECT id::text FROM checked ORDER BY checked.id DESC LIMIT 1),'0'),
+          'headHash',COALESCE((SELECT entry_hash FROM checked ORDER BY checked.id DESC LIMIT 1),repeat('0',64)),
           'anchorHash',(SELECT entry_hash FROM checked WHERE id=""" + str(anchor_id) + """),
+          'resolvedAnchorId',(SELECT id::text FROM checked WHERE entry_hash=""" + literal(anchor['headHash'] if anchor else ZERO) + """ LIMIT 1),
           'failures',count(*) FILTER (WHERE id <> expected_id OR previous_hash <> expected_previous OR entry_hash <>
             encode(digest(convert_to(jsonb_build_array(id,extract(epoch FROM occurred_at),actor,event,outcome,previous_hash)::text,'UTF8'),'sha256'),'hex'))
         ) FROM checked;"""))
-        compare(snapshot, anchor, instance)
+        compare(snapshot, anchor, instance, repair_legacy_head)
         checkpoint = {key: snapshot[key] for key in ('instanceId', 'headId', 'headHash')}
-        checkpoint.update(schema=1, capturedAt=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        checkpoint.update(schema=2, capturedAt=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                           previousCheckpoint=latest['key'])
+        if 'legacyHeadCorrection' in snapshot:
+            checkpoint['legacyHeadCorrection'] = snapshot['legacyHeadCorrection']
         saved = remote('put', checkpoint)
         record(instance, 'verified', checkpoint['headId'], checkpoint['headHash'], saved['key'])
         print('CHECKPOINT_VERIFIED head=' + checkpoint['headId'] + ' key=' + saved['key'])
@@ -117,4 +130,5 @@ def main(instance, bootstrap=False):
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1], bootstrap='--bootstrap' in sys.argv[2:]))
+    sys.exit(main(sys.argv[1], bootstrap='--bootstrap' in sys.argv[2:],
+                  repair_legacy_head='--repair-legacy-head' in sys.argv[2:]))

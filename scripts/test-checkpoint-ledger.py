@@ -53,6 +53,19 @@ class CheckpointTests(unittest.TestCase):
             self.assertEqual(job.main(INSTANCE), 1)
             record.assert_called_once_with(INSTANCE, 'failed', error='checkpoint_unavailable')
 
+    def test_legacy_text_ordering_requires_explicit_repair(self):
+        snapshot = dict(self.snapshot, headId='10', anchorHash='b' * 64, resolvedAnchorId='10')
+        anchor = dict(self.anchor, headId='9')
+        with self.assertRaisesRegex(RuntimeError, 'external_checkpoint_mismatch'):
+            job.compare(snapshot, anchor, INSTANCE)
+        job.compare(snapshot, anchor, INSTANCE, repair_legacy_head=True)
+        self.assertEqual(snapshot['legacyHeadCorrection']['resolvedHeadId'], '10')
+
+    def test_legacy_repair_never_applies_to_new_checkpoints(self):
+        snapshot = dict(self.snapshot, headId='10', anchorHash='b' * 64, resolvedAnchorId='10')
+        with self.assertRaisesRegex(RuntimeError, 'external_checkpoint_mismatch'):
+            job.compare(snapshot, dict(self.anchor, schema=2, headId='9'), INSTANCE, repair_legacy_head=True)
+
 
 if __name__ == '__main__':
     unittest.main()
