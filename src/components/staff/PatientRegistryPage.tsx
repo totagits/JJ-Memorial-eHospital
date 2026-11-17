@@ -799,6 +799,44 @@ function ActivityTrend() {
   </figure>;
 }
 
+const managementWorkstations = [
+  ...clinicianWorkstations.filter(item => item.id !== 'workflow').map(item => ({ ...item, available: false })),
+  { id: 'charts', label: 'Clinical Charts (OPD EMR)', available: false },
+  { id: 'billing', label: 'Billing & Invoicing', available: false },
+  { id: 'ledger', label: 'General Ledger & Accounts', available: false },
+  { id: 'hr', label: 'HR, Staff & Payroll', available: false },
+  { id: 'management', label: 'Management overview', available: true },
+  { id: 'audit', label: 'Audit Trail & Compliance', available: true },
+];
+
+function ManagementAudit() {
+  const [rows, setRows] = useState<{action: string; count: number; latestAt: string}[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    request<{action: string; count: number; latestAt: string}[]>('/workspace/audit-summary')
+      .then(value => { if (active) setRows(value); }).catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, []);
+  return <section className="space-y-5">
+    <header className="rounded-2xl border border-violet-200 bg-white p-6 shadow-sm">
+      <h2 className="text-2xl font-bold">Management audit overview</h2>
+      <p className="mt-2 text-sm text-slate-600">Recorded patient registrations and record views in staging</p>
+    </header>
+    {failed && <p role="alert">Audit summary unavailable.</p>}
+    {!rows && !failed && <p role="status">Loading audit summary...</p>}
+    <dl className="grid gap-4 sm:grid-cols-2">
+      {rows?.map(row => <div key={row.action} className="rounded-xl border border-violet-200 bg-white p-6">
+        <dt className="font-medium">{row.action === 'registered' ? 'Patient registration events' : 'Record view events'}</dt>
+        <dd className="mt-2 text-3xl font-bold text-violet-900">{row.count}</dd>
+        <dd className="mt-2 text-sm text-slate-600">Latest {scheduleDate.format(new Date(row.latestAt))} (Monrovia)</dd>
+      </div>)}
+    </dl>
+    <ActivityTrend />
+    <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Login history, export monitoring, emergency access events and cryptographic ledger verification require additional audit instrumentation.</p>
+  </section>;
+}
+
 function ManagementWorkspace() {
   const [metrics, setMetrics] = useState<DashboardMetric[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -967,7 +1005,7 @@ export function PatientRegistryPage() {
     };
   }
 
-  const sections = staff && (staff.role === 'management' ? [{ id: 'management', label: 'Management' }] : staff.role === 'billing' || staff.role === 'cashier' ? billingWorkstations : staff.role === 'super_admin' ? [{ id: 'management', label: 'Management' }, { id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
+  const sections = staff && (staff.role === 'management' ? managementWorkstations : staff.role === 'billing' || staff.role === 'cashier' ? billingWorkstations : staff.role === 'super_admin' ? [{ id: 'management', label: 'Management' }, { id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
@@ -984,7 +1022,9 @@ export function PatientRegistryPage() {
         <p className="mt-2 text-slate-700">Use synthetic patient data only.</p>
         {staff && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div>
-            <p>Signed in as <strong>{staff.username}</strong> ({staff.role})</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">J &amp; J Memorial · {staff.role === 'management' ? 'Management Workstation & Analytics' : roleTitles[staff.role]}</p>
+            <p className="mt-2 text-xl font-bold">{staff.username.split('.').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')}</p>
+            <p className="mt-1 text-sm text-slate-600">{staff.username} · {staff.role === 'management' ? 'Read-only operational access' : staff.role}</p>
             {staff.departments?.some(department => department.role === staff.role)
               ? <p className="text-sm">{staff.departments.filter(department => department.role === staff.role).map(department => department.name).join(', ')}</p>
               : (staff.role === 'clinician' || staff.role === 'triage' || isDepartmentRole(staff.role)) && <p className="text-sm">No department assigned for this role.</p>}
@@ -1017,14 +1057,14 @@ export function PatientRegistryPage() {
               {staff.role !== 'viewer' && staff.role !== 'restricted' && staff.role !== 'management' && <button type="button" aria-current={section === 'overview' ? 'page' : undefined}
                 className={'mb-2 flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold ' + (section === 'overview' ? 'bg-teal-900 text-white' : 'text-teal-900 hover:bg-teal-50')}
                 onClick={() => setSection('overview')}><LayoutDashboard size={16} aria-hidden="true" /> Overview</button>}
-              {sections?.map(item => <button key={item.id} type="button" aria-current={(section === item.id || staff.role === 'management' && item.id === 'management' || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'page' : undefined}
-                disabled={'available' in item && !item.available || ['clinician', 'billing', 'cashier'].includes(staff.role) && !('available' in item)}
-                className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + ((section === item.id || staff.role === 'management' && item.id === 'management' || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
+              {sections?.map(item => <button key={item.id} type="button" aria-current={(section === item.id || staff.role === 'management' && section === 'overview' && item.id === 'management' || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'page' : undefined}
+                disabled={'available' in item && !item.available || ['clinician', 'billing', 'cashier', 'management'].includes(staff.role) && !('available' in item)}
+                className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + ((section === item.id || staff.role === 'management' && section === 'overview' && item.id === 'management' || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
                 onClick={() => setSection(item.id)}>{item.label}</button>)}
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
             <div>
-            {staff.role === 'management' ? <ManagementWorkspace /> : section === 'overview' && staff.role !== 'viewer' && staff.role !== 'restricted'
+            {staff.role === 'management' ? (section === 'audit' ? <ManagementAudit /> : <ManagementWorkspace />) : section === 'overview' && staff.role !== 'viewer' && staff.role !== 'restricted'
               ? <WorkspaceOverview key={staff.username} staff={staff} onOpen={() => setSection(staff.role === 'pharmacist' ? 'pharmacy' : 'workflow')} />
               : staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? (section === 'management' ? <ManagementWorkspace /> : <StaffAccessReview />) : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />

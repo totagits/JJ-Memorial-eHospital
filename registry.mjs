@@ -396,6 +396,13 @@ export function registryRoutes(database, origin) {
     res.json({ label: trends.label, days: rows });
   }));
 
+  router.get('/workspace/audit-summary', requirePermission('management:read'), route(async (_req, res) => {
+    const { rows } = await database.query(
+      `SELECT action, count(*)::int AS count, max(occurred_at) AS "latestAt"
+       FROM registry_audit GROUP BY action ORDER BY action`);
+    res.json(rows);
+  }));
+
   router.get('/workspace/management', requirePermission('management:read'), route(async (_req, res) => {
     const { rows: [counts] } = await database.query(
       `SELECT (SELECT count(*)::int FROM scheduled_visits WHERE status='waiting_for_triage') AS triage,
