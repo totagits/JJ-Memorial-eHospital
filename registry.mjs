@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql', '021_patient_vitals.sql', '022_prescription_revisions.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql', '021_patient_vitals.sql', '022_prescription_revisions.sql', '023_management_role.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -62,11 +62,12 @@ const staffPermissions = new Map([
   ['viewer', new Set(['patients:read'])],
   ['triage', new Set(['triage:manage'])],
   ['clinician', new Set(['encounters:assigned'])],
+  ['management', new Set(['management:read'])],
   ['cashier', new Set(['billing:read', 'billing:payment'])],
   ['billing', new Set(['billing:read', 'billing:issue'])],
   ...Array.from(departmentWork.keys(), role => [role, new Set(['department:work'])]),
   ['restricted', new Set()],
-  ['super_admin', new Set(['staff:review'])],
+  ['super_admin', new Set(['staff:review', 'management:read'])],
 ]);
 
 function requirePermission(permission) {
@@ -376,6 +377,7 @@ export function registryRoutes(database, origin) {
       registrar: { label: 'Patient registrations you recorded', sql: "SELECT occurred_at AS stamp FROM registry_audit WHERE actor=$1 AND action='registered'", params: [username] },
       billing: { label: 'Invoices you issued', sql: 'SELECT issued_at AS stamp FROM staging_invoices WHERE issued_by=$1', params: [username] },
       cashier: { label: 'Payments you recorded', sql: 'SELECT recorded_at AS stamp FROM staging_receipts WHERE recorded_by=$1', params: [username] },
+      management: { label: 'Completed clinical encounters', sql: 'SELECT recorded_at AS stamp FROM clinician_encounters', params: [] },
       super_admin: { label: 'Registry audit events', sql: 'SELECT occurred_at AS stamp FROM registry_audit', params: [] },
     }[role];
     if (!trends) return res.sendStatus(403);
@@ -394,7 +396,7 @@ export function registryRoutes(database, origin) {
     res.json({ label: trends.label, days: rows });
   }));
 
-  router.get('/workspace/management', requirePermission('staff:review'), route(async (_req, res) => {
+  router.get('/workspace/management', requirePermission('management:read'), route(async (_req, res) => {
     const { rows: [counts] } = await database.query(
       `SELECT (SELECT count(*)::int FROM scheduled_visits WHERE status='waiting_for_triage') AS triage,
               (SELECT count(*)::int FROM scheduled_visits WHERE status='completed') AS encounters,

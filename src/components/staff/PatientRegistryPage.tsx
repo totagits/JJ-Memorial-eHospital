@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 
 type Staff = {
   username: string;
-  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' | 'super_admin' | 'cashier' | 'billing' | DepartmentRole;
+  role: 'registrar' | 'viewer' | 'restricted' | 'triage' | 'clinician' | 'super_admin' | 'cashier' | 'billing' | 'management' | DepartmentRole;
   departments?: { code: string; name: string; role: string }[];
 };
 type DepartmentRole = 'nurse' | 'lab_technician' | 'lab_reviewer' | 'pharmacist';
@@ -766,7 +766,7 @@ function VirtualVisitWorkspace({ clinician }: { clinician: boolean }) {
 
 const roleTitles: Record<Staff['role'], string> = {
   clinician: 'Clinician', nurse: 'Nursing', triage: 'Triage', lab_technician: 'Laboratory Technician',
-  lab_reviewer: 'LIS Review', pharmacist: 'Pharmacy', super_admin: 'Administration',
+  lab_reviewer: 'LIS Review', pharmacist: 'Pharmacy', super_admin: 'Administration', management: 'Management',
   billing: 'Billing', cashier: 'Cashier', registrar: 'Registration', viewer: 'Patient Lookup', restricted: 'Staff',
 };
 
@@ -967,7 +967,7 @@ export function PatientRegistryPage() {
     };
   }
 
-  const sections = staff && (staff.role === 'billing' || staff.role === 'cashier' ? billingWorkstations : staff.role === 'super_admin' ? [{ id: 'management', label: 'Management' }, { id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
+  const sections = staff && (staff.role === 'management' ? [{ id: 'management', label: 'Management' }] : staff.role === 'billing' || staff.role === 'cashier' ? billingWorkstations : staff.role === 'super_admin' ? [{ id: 'management', label: 'Management' }, { id: 'workflow', label: 'Staff access review' }] : staff.role === 'pharmacist' ? pharmacyWorkstations : isDepartmentRole(staff.role) ? [
     { id: 'workflow', label: 'Work queue' }, { id: 'analytics', label: 'Workload analytics' },
   ] : staff.role === 'registrar' ? [
     { id: 'workflow', label: 'Registration and lookup' }, { id: 'appointments', label: 'Appointments and calendar' },
@@ -1014,17 +1014,17 @@ export function PatientRegistryPage() {
           <div className="grid gap-5 xl:grid-cols-[15rem_minmax(0,1fr)]">
             <nav aria-label="Staff workspace" className="self-start rounded-2xl border border-slate-200 bg-white p-3 shadow-sm xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)] xl:overflow-y-auto">
               <p className="mb-2 px-2 text-sm font-semibold">{staff.role === 'clinician' ? 'Clinician workstations' : staff.role === 'pharmacist' ? 'Pharmacy workstations' : staff.role === 'billing' || staff.role === 'cashier' ? 'Billing workstations' : 'Workspace'}</p>
-              {staff.role !== 'viewer' && staff.role !== 'restricted' && <button type="button" aria-current={section === 'overview' ? 'page' : undefined}
+              {staff.role !== 'viewer' && staff.role !== 'restricted' && staff.role !== 'management' && <button type="button" aria-current={section === 'overview' ? 'page' : undefined}
                 className={'mb-2 flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold ' + (section === 'overview' ? 'bg-teal-900 text-white' : 'text-teal-900 hover:bg-teal-50')}
                 onClick={() => setSection('overview')}><LayoutDashboard size={16} aria-hidden="true" /> Overview</button>}
-              {sections?.map(item => <button key={item.id} type="button" aria-current={(section === item.id || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'page' : undefined}
+              {sections?.map(item => <button key={item.id} type="button" aria-current={(section === item.id || staff.role === 'management' && item.id === 'management' || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'page' : undefined}
                 disabled={'available' in item && !item.available || ['clinician', 'billing', 'cashier'].includes(staff.role) && !('available' in item)}
-                className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + ((section === item.id || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
+                className={'mb-1 block min-h-11 disabled:cursor-not-allowed disabled:text-slate-500 w-full rounded-md px-2 text-left text-sm ' + ((section === item.id || staff.role === 'management' && item.id === 'management' || staff.role === 'pharmacist' && section === 'workflow' && item.id === 'pharmacy') ? 'bg-teal-100 font-semibold text-teal-950' : 'hover:bg-slate-100')}
                 onClick={() => setSection(item.id)}>{item.label}</button>)}
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
             <div>
-            {section === 'overview' && staff.role !== 'viewer' && staff.role !== 'restricted'
+            {staff.role === 'management' ? <ManagementWorkspace /> : section === 'overview' && staff.role !== 'viewer' && staff.role !== 'restricted'
               ? <WorkspaceOverview key={staff.username} staff={staff} onOpen={() => setSection(staff.role === 'pharmacist' ? 'pharmacy' : 'workflow')} />
               : staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? (section === 'management' ? <ManagementWorkspace /> : <StaffAccessReview />) : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
