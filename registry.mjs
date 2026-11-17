@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql', '021_patient_vitals.sql', '022_prescription_revisions.sql', '023_management_role.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql', '021_patient_vitals.sql', '022_prescription_revisions.sql', '023_management_role.sql', '024_security_ledger.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -233,13 +233,17 @@ export function registryRoutes(database, origin) {
       'SELECT username, role FROM registry_staff WHERE username=$1 AND password_hash=$2',
       [username, hash(accessKey)],
     );
-    if (!staff) return res.sendStatus(401);
+    if (!staff) {
+      await database.query("INSERT INTO security_ledger(actor,event,outcome) VALUES('unauthenticated','staff_login','denied')");
+      return res.sendStatus(401);
+    }
     const token = randomBytes(32).toString('hex');
     await transaction(database, async client => {
       await client.query('DELETE FROM registry_sessions WHERE expires_at <= now() OR token_hash=$1', [sessionHash(req)]);
       await client.query(
         "INSERT INTO registry_sessions VALUES ($1,$2,now()+interval '8 hours')", [hash(token), staff.username],
       );
+      await client.query("INSERT INTO security_ledger(actor,event,outcome) VALUES($1,'staff_login','success')", [staff.username]);
     });
     res.cookie(cookie, token, { ...cookieOptions, maxAge: 8 * 3600 * 1000 }).json(staff);
   }));
@@ -394,6 +398,32 @@ export function registryRoutes(database, origin) {
        SELECT days.day::text AS day, COALESCE(counts.total,0) AS value
        FROM days LEFT JOIN counts USING (day) ORDER BY days.day`, trends.params);
     res.json({ label: trends.label, days: rows });
+  }));
+
+  router.get('/workspace/security-ledger', requirePermission('management:read'), route(async (_req, res) => {
+    const { rows } = await database.query(
+      'SELECT id::text,occurred_at AS "occurredAt",actor,event,outcome FROM security_ledger ORDER BY id DESC LIMIT 100');
+    res.json(rows);
+  }));
+  router.post('/workspace/security-ledger/verify', requirePermission('management:read'), route(async (_req, res) => {
+    const { rows: [result] } = await database.query(
+      `WITH checked AS (
+        SELECT *, COALESCE(lag(entry_hash) OVER (ORDER BY id),repeat('0',64)) AS expected_previous
+        FROM security_ledger
+      )
+      SELECT count(*)::int AS entries,
+        count(*) FILTER (WHERE previous_hash <> expected_previous OR entry_hash <>
+          encode(digest(convert_to(jsonb_build_array(id,extract(epoch FROM occurred_at),actor,event,outcome,previous_hash)::text,'UTF8'),'sha256'),'hex'))::int AS failures
+      FROM checked`);
+    res.json(result);
+  }));
+  router.get('/workspace/security-ledger/export', requirePermission('management:read'), route(async (_req, res) => {
+    const rows = await transaction(database, async client => {
+      const result = await client.query('SELECT id::text,occurred_at,actor,event,outcome,previous_hash,entry_hash FROM security_ledger ORDER BY id LIMIT 10000');
+      await client.query("INSERT INTO security_ledger(actor,event,outcome) VALUES($1,'security_ledger_export','generated')", [res.locals.staff.username]);
+      return result.rows;
+    });
+    res.attachment('staging-security-ledger.json').json(rows);
   }));
 
   router.get('/workspace/audit-summary', requirePermission('management:read'), route(async (_req, res) => {

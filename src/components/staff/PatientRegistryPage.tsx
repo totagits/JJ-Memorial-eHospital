@@ -809,6 +809,46 @@ const managementWorkstations = [
   { id: 'audit', label: 'Audit Trail & Compliance', available: true },
 ];
 
+type SecurityEvent = { id: string; occurredAt: string; actor: string; event: string; outcome: string };
+function SecurityLedger() {
+  const [events, setEvents] = useState<SecurityEvent[] | null>(null);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let active = true;
+    request<SecurityEvent[]>('/workspace/security-ledger').then(value => { if (active) setEvents(value); })
+      .catch(() => { if (active) setMessage('Security events unavailable.'); });
+    return () => { active = false; };
+  }, []);
+  async function verify() {
+    setBusy(true);
+    try {
+      const result = await request<{entries: number; failures: number}>('/workspace/security-ledger/verify', {});
+      setMessage(result.failures ? 'Verification detected ' + result.failures + ' inconsistent entries.' : 'Hash chain verified across ' + result.entries + ' entries.');
+    } catch { setMessage('Ledger verification unavailable.'); }
+    finally { setBusy(false); }
+  }
+  return <section className="space-y-4 rounded-2xl border border-violet-200 bg-white p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h3 className="text-lg font-bold">Security event ledger</h3>
+      <div className="flex flex-wrap gap-2">
+        <button disabled={busy} onClick={() => void verify()} className={scheduleButton}>Verify hash chain</button>
+        <a href="/api/registry/workspace/security-ledger/export" className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-4 font-semibold">Export ledger JSON</a>
+      </div>
+    </div>
+    <p role="status">{message}</p>
+    <p className="text-sm text-slate-600">Staff login attempts and ledger exports recorded since this feature was deployed. Latest 100 events.</p>
+    <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+      <thead className="border-b border-slate-200"><tr>{['Time (Monrovia)','Account','Event','Outcome'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
+      <tbody>{events?.map(event => <tr key={event.id} className="border-b border-slate-100">
+        <td className="p-3">{scheduleDate.format(new Date(event.occurredAt))}</td><td className="p-3">{event.actor}</td>
+        <td className="p-3">{event.event}</td><td className="p-3">{event.outcome}</td>
+      </tr>)}</tbody>
+    </table></div>
+    {events?.length === 0 && <p>No security events recorded yet.</p>}
+  </section>;
+}
+
 function ManagementAudit() {
   const [rows, setRows] = useState<{action: string; count: number; latestAt: string}[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -833,7 +873,8 @@ function ManagementAudit() {
       </div>)}
     </dl>
     <ActivityTrend />
-    <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Login history, export monitoring, emergency access events and cryptographic ledger verification require additional audit instrumentation.</p>
+    <SecurityLedger />
+    <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Emergency access override has no active workflow. Additional export paths require event instrumentation. Hash chaining detects internal inconsistencies; independently retained checkpoints are required to detect a privileged rewrite of the entire ledger.</p>
   </section>;
 }
 
