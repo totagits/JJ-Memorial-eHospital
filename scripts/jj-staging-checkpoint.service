@@ -1,0 +1,11 @@
+[Unit]
+Description=J J Memorial staging independent R2 ledger checkpoint
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/jj-staging-checkpoint.env
+ExecStart=/usr/bin/python3 /data/coolify/jj-staging-audit/checkpoint-ledger.py ${JJ_STAGING_INSTANCE_ID}
+TimeoutStartSec=180
+UMask=0077

@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql', '021_patient_vitals.sql', '022_prescription_revisions.sql', '023_management_role.sql', '024_security_ledger.sql'];
+const migrations = ['001_patient_registry.sql', '002_appointment_requests.sql', '003_clinician_schedule.sql', '004_triage.sql', '005_clinician_encounters.sql', '006_notification_outbox.sql', '007_department_memberships.sql', '008_department_workspaces.sql', '009_registry_instance.sql', '010_betty_boduo_clinician.sql', '011_staff_access_review.sql', '012_patient_portal.sql', '013_appointment_changes.sql', '014_appointment_notification_events.sql', '015_patient_lab_releases.sql', '016_patient_visit_releases.sql', '017_prescriptions.sql', '018_patient_billing.sql', '019_billing_role.sql', '020_virtual_visits.sql', '021_patient_vitals.sql', '022_prescription_revisions.sql', '023_management_role.sql', '024_security_ledger.sql', '025_security_checkpoints.sql'];
 const departments = new Set(['Internal Medicine & OPD', 'Pediatrics & Child Wellness',
   'Maternal & Prenatal Health', 'Cardiology & Chronic Care', 'General Surgery Consult']);
 const clinicians = new Set(['USR-001', 'USR-002']);
@@ -405,14 +405,27 @@ export function registryRoutes(database, origin) {
       'SELECT id::text,occurred_at AS "occurredAt",actor,event,outcome FROM security_ledger ORDER BY id DESC LIMIT 100');
     res.json(rows);
   }));
+  router.get('/workspace/security-ledger/checkpoint', requirePermission('management:read'), route(async (_req, res) => {
+    const { rows: [checkpoint] } = await database.query(`
+      SELECT checked_at AS "checkedAt", head_id::text AS "headId", object_key AS "objectKey",
+        CASE WHEN state = 'failed' THEN 'failed'
+          WHEN instance_id <> (SELECT instance_id FROM registry_instance WHERE singleton)
+            OR (head_id > 0 AND head_hash IS DISTINCT FROM (SELECT entry_hash FROM security_ledger WHERE id=head_id))
+            OR (head_id = 0 AND head_hash <> repeat('0',64)) THEN 'mismatch'
+          WHEN checked_at < now() - interval '30 minutes' THEN 'overdue'
+          ELSE 'verified' END AS status
+      FROM security_checkpoint_status WHERE singleton`);
+    res.json(checkpoint || { status: 'not_configured' });
+  }));
   router.post('/workspace/security-ledger/verify', requirePermission('management:read'), route(async (_req, res) => {
     const { rows: [result] } = await database.query(
       `WITH checked AS (
-        SELECT *, COALESCE(lag(entry_hash) OVER (ORDER BY id),repeat('0',64)) AS expected_previous
+        SELECT *, COALESCE(lag(entry_hash) OVER (ORDER BY id),repeat('0',64)) AS expected_previous,
+          row_number() OVER (ORDER BY id) AS expected_id
         FROM security_ledger
       )
       SELECT count(*)::int AS entries,
-        count(*) FILTER (WHERE previous_hash <> expected_previous OR entry_hash <>
+        count(*) FILTER (WHERE id <> expected_id OR previous_hash <> expected_previous OR entry_hash <>
           encode(digest(convert_to(jsonb_build_array(id,extract(epoch FROM occurred_at),actor,event,outcome,previous_hash)::text,'UTF8'),'sha256'),'hex'))::int AS failures
       FROM checked`);
     res.json(result);

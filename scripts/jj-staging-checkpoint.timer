@@ -1,0 +1,11 @@
+[Unit]
+Description=Check staging ledger against R2 every 15 minutes
+
+[Timer]
+OnCalendar=*-*-* *:00,15,30,45:00 UTC
+Persistent=true
+RandomizedDelaySec=15
+Unit=jj-staging-checkpoint.service
+
+[Install]
+WantedBy=timers.target

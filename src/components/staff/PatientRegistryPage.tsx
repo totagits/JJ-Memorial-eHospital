@@ -810,21 +810,33 @@ const managementWorkstations = [
 ];
 
 type SecurityEvent = { id: string; occurredAt: string; actor: string; event: string; outcome: string };
+type LedgerCheckpoint = { status: 'verified' | 'failed' | 'mismatch' | 'overdue' | 'not_configured'; checkedAt?: string; headId?: string; objectKey?: string };
 function SecurityLedger() {
   const [events, setEvents] = useState<SecurityEvent[] | null>(null);
+  const [checkpoint, setCheckpoint] = useState<LedgerCheckpoint | null>(null);
+  const [checkpointError, setCheckpointError] = useState(false);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
     request<SecurityEvent[]>('/workspace/security-ledger').then(value => { if (active) setEvents(value); })
       .catch(() => { if (active) setMessage('Security events unavailable.'); });
-    return () => { active = false; };
+    const refreshCheckpoint = () => request<LedgerCheckpoint>('/workspace/security-ledger/checkpoint')
+      .then(value => { if (active) { setCheckpoint(value); setCheckpointError(false); } })
+      .catch(() => { if (active) setCheckpointError(true); });
+    void refreshCheckpoint();
+    const refresh = window.setInterval(() => void refreshCheckpoint(), 60000);
+    return () => { active = false; window.clearInterval(refresh); };
   }, []);
   async function verify() {
     setBusy(true);
     try {
       const result = await request<{entries: number; failures: number}>('/workspace/security-ledger/verify', {});
       setMessage(result.failures ? 'Verification detected ' + result.failures + ' inconsistent entries.' : 'Hash chain verified across ' + result.entries + ' entries.');
+      try {
+        setCheckpoint(await request<LedgerCheckpoint>('/workspace/security-ledger/checkpoint'));
+        setCheckpointError(false);
+      } catch { setCheckpointError(true); }
     } catch { setMessage('Ledger verification unavailable.'); }
     finally { setBusy(false); }
   }
@@ -837,6 +849,18 @@ function SecurityLedger() {
       </div>
     </div>
     <p role="status">{message}</p>
+    <div className={'rounded-xl border p-4 ' + (checkpoint?.status === 'verified' && !checkpointError ? 'border-teal-200 bg-teal-50' : 'border-amber-200 bg-amber-50')}>
+      <h4 className="font-bold">Independent R2 checkpoint</h4>
+      <p role="status" className="mt-1 text-sm">{checkpointError ? 'Checkpoint status unavailable.' : !checkpoint ? 'Checking checkpoint status…' : ({
+        verified: 'Verified against the R2 checkpoint. The server checks every 15 minutes.',
+        failed: 'The latest external checkpoint check failed. Investigation required.',
+        mismatch: 'The ledger no longer matches its retained checkpoint. Investigation required.',
+        overdue: 'Checkpoint verification is overdue. The last result is more than 30 minutes old.',
+        not_configured: 'No external checkpoint has been verified yet.',
+      })[checkpoint.status]}</p>
+      {checkpoint?.checkedAt && <p className="mt-2 text-sm">Last check: {scheduleDate.format(new Date(checkpoint.checkedAt))} (Monrovia){checkpoint.headId ? ' · Ledger entry ' + checkpoint.headId : ''}</p>}
+      <p className="mt-2 text-xs text-slate-600">Checkpoints contain ledger hashes, not patient records. R2 storage is separate from database backups; administrators with access to both systems can still alter both.</p>
+    </div>
     <p className="text-sm text-slate-600">Staff login attempts and ledger exports recorded since this feature was deployed. Latest 100 events.</p>
     <div className="overflow-x-auto"><table className="w-full text-left text-sm">
       <thead className="border-b border-slate-200"><tr>{['Time (Monrovia)','Account','Event','Outcome'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
@@ -874,7 +898,7 @@ function ManagementAudit() {
     </dl>
     <ActivityTrend />
     <SecurityLedger />
-    <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Emergency access override has no active workflow. Additional export paths require event instrumentation. Hash chaining detects internal inconsistencies; independently retained checkpoints are required to detect a privileged rewrite of the entire ledger.</p>
+    <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Emergency access override has no active workflow. Additional export paths require event instrumentation. Hash chaining checks internal consistency; the independent R2 checkpoint checks the retained ledger history.</p>
   </section>;
 }
 
