@@ -14,6 +14,20 @@ const cookie = '__Host-jj_registry';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hash = value => createHash('sha256').update(value).digest('hex');
 const cookieOptions = { httpOnly: true, secure: true, sameSite: 'strict', path: '/' };
+// Management gets audit metadata only; patient references are masked.
+const managementAuditSql = `WITH events AS (
+  SELECT 'SEC-' || l.id AS id,l.occurred_at AS "occurredAt",l.actor,l.event AS action,l.outcome,
+    CASE WHEN l.event='staff_login' THEN 'login' WHEN l.event LIKE '%_export' THEN 'export' ELSE 'other' END AS category,
+    'Security' AS module,'Security ledger' AS source,NULL::text AS "patientReference"
+  FROM security_ledger l
+  UNION ALL
+  SELECT 'REG-' || a.id,a.occurred_at,a.actor,a.action,'success',
+    CASE WHEN a.action='viewed' THEN 'access' ELSE 'registration' END,
+    'Patient registry','Operational audit','…' || right(a.mrn::text,8)
+  FROM registry_audit a
+), enriched AS (
+  SELECT e.*,s.role AS "currentRole" FROM events e LEFT JOIN registry_staff s ON s.username=e.actor
+)`;
 
 async function transaction(database, operation) {
   const client = await database.connect();
@@ -444,6 +458,31 @@ export function registryRoutes(database, origin) {
       `SELECT action, count(*)::int AS count, max(occurred_at) AS "latestAt"
        FROM registry_audit GROUP BY action ORDER BY action`);
     res.json(rows);
+  }));
+  router.get('/workspace/audit-events', requirePermission('management:read'), route(async (_req, res) => {
+    const { rows: [{ dashboard }] } = await database.query(managementAuditSql + `
+      SELECT jsonb_build_object(
+        'total',count(*)::int,
+        'logins',count(*) FILTER(WHERE category='login')::int,
+        'accesses',count(*) FILTER(WHERE category='access')::int,
+        'registrations',count(*) FILTER(WHERE category='registration')::int,
+        'exports',count(*) FILTER(WHERE category='export')::int,
+        'denied',count(*) FILTER(WHERE outcome='denied')::int,
+        'modules',COALESCE((SELECT jsonb_agg(to_jsonb(m)) FROM (SELECT module AS name,count(*)::int AS value FROM enriched GROUP BY module ORDER BY module) m),'[]'::jsonb),
+        'events',COALESCE((SELECT jsonb_agg(to_jsonb(r)) FROM (SELECT * FROM enriched ORDER BY "occurredAt" DESC,id DESC LIMIT 1000) r),'[]'::jsonb)
+      ) AS dashboard FROM enriched`);
+    res.json(dashboard);
+  }));
+  router.post('/workspace/audit-events/export', requirePermission('management:read'), route(async (req, res) => {
+    if (!['csv','json'].includes(req.body?.format)) return res.sendStatus(400);
+    const result = await transaction(database, async client => {
+      const { rows } = await client.query(managementAuditSql + ' SELECT * FROM enriched ORDER BY "occurredAt" DESC,id DESC LIMIT 10001');
+      if (rows.length > 10000) return null;
+      await client.query("INSERT INTO security_ledger(actor,event,outcome) VALUES($1,'audit_events_export','generated')", [res.locals.staff.username]);
+      return rows;
+    });
+    if (!result) return res.status(409).json({ error: 'Export exceeds the 10,000-event limit.' });
+    res.json({ events: result, generatedAt: new Date().toISOString(), scope: 'Recorded staging audit metadata; patient references masked.' });
   }));
 
   router.get('/workspace/management', requirePermission('management:read'), route(async (_req, res) => {

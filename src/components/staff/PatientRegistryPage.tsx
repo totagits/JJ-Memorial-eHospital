@@ -1,5 +1,6 @@
 import { Activity, ArrowUpRight, LayoutDashboard } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+const ManagementAuditWorkspace = React.lazy(() => import('./ManagementAuditWorkspace'));
 
 type Staff = {
   username: string;
@@ -809,99 +810,6 @@ const managementWorkstations = [
   { id: 'audit', label: 'Audit Trail & Compliance', available: true },
 ];
 
-type SecurityEvent = { id: string; occurredAt: string; actor: string; event: string; outcome: string };
-type LedgerCheckpoint = { status: 'verified' | 'failed' | 'mismatch' | 'overdue' | 'not_configured'; checkedAt?: string; headId?: string; objectKey?: string };
-function SecurityLedger() {
-  const [events, setEvents] = useState<SecurityEvent[] | null>(null);
-  const [checkpoint, setCheckpoint] = useState<LedgerCheckpoint | null>(null);
-  const [checkpointError, setCheckpointError] = useState(false);
-  const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let active = true;
-    request<SecurityEvent[]>('/workspace/security-ledger').then(value => { if (active) setEvents(value); })
-      .catch(() => { if (active) setMessage('Security events unavailable.'); });
-    const refreshCheckpoint = () => request<LedgerCheckpoint>('/workspace/security-ledger/checkpoint')
-      .then(value => { if (active) { setCheckpoint(value); setCheckpointError(false); } })
-      .catch(() => { if (active) setCheckpointError(true); });
-    void refreshCheckpoint();
-    const refresh = window.setInterval(() => void refreshCheckpoint(), 60000);
-    return () => { active = false; window.clearInterval(refresh); };
-  }, []);
-  async function verify() {
-    setBusy(true);
-    try {
-      const result = await request<{entries: number; failures: number}>('/workspace/security-ledger/verify', {});
-      setMessage(result.failures ? 'Verification detected ' + result.failures + ' inconsistent entries.' : 'Hash chain verified across ' + result.entries + ' entries.');
-      try {
-        setCheckpoint(await request<LedgerCheckpoint>('/workspace/security-ledger/checkpoint'));
-        setCheckpointError(false);
-      } catch { setCheckpointError(true); }
-    } catch { setMessage('Ledger verification unavailable.'); }
-    finally { setBusy(false); }
-  }
-  return <section className="space-y-4 rounded-2xl border border-violet-200 bg-white p-5">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h3 className="text-lg font-bold">Security event ledger</h3>
-      <div className="flex flex-wrap gap-2">
-        <button disabled={busy} onClick={() => void verify()} className={scheduleButton}>Verify hash chain</button>
-        <a href="/api/registry/workspace/security-ledger/export" className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-4 font-semibold">Export ledger JSON</a>
-      </div>
-    </div>
-    <p role="status">{message}</p>
-    <div className={'rounded-xl border p-4 ' + (checkpoint?.status === 'verified' && !checkpointError ? 'border-teal-200 bg-teal-50' : 'border-amber-200 bg-amber-50')}>
-      <h4 className="font-bold">Independent R2 checkpoint</h4>
-      <p role="status" className="mt-1 text-sm">{checkpointError ? 'Checkpoint status unavailable.' : !checkpoint ? 'Checking checkpoint status…' : ({
-        verified: 'Verified against the R2 checkpoint. The server checks every 15 minutes.',
-        failed: 'The latest external checkpoint check failed. Investigation required.',
-        mismatch: 'The ledger no longer matches its retained checkpoint. Investigation required.',
-        overdue: 'Checkpoint verification is overdue. The last result is more than 30 minutes old.',
-        not_configured: 'No external checkpoint has been verified yet.',
-      })[checkpoint.status]}</p>
-      {checkpoint?.checkedAt && <p className="mt-2 text-sm">Last check: {scheduleDate.format(new Date(checkpoint.checkedAt))} (Monrovia){checkpoint.headId ? ' · Ledger entry ' + checkpoint.headId : ''}</p>}
-      <p className="mt-2 text-xs text-slate-600">Checkpoints contain ledger hashes, not patient records. R2 storage is separate from database backups; administrators with access to both systems can still alter both.</p>
-    </div>
-    <p className="text-sm text-slate-600">Staff login attempts and ledger exports recorded since this feature was deployed. Latest 100 events.</p>
-    <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-      <thead className="border-b border-slate-200"><tr>{['Time (Monrovia)','Account','Event','Outcome'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
-      <tbody>{events?.map(event => <tr key={event.id} className="border-b border-slate-100">
-        <td className="p-3">{scheduleDate.format(new Date(event.occurredAt))}</td><td className="p-3">{event.actor}</td>
-        <td className="p-3">{event.event}</td><td className="p-3">{event.outcome}</td>
-      </tr>)}</tbody>
-    </table></div>
-    {events?.length === 0 && <p>No security events recorded yet.</p>}
-  </section>;
-}
-
-function ManagementAudit() {
-  const [rows, setRows] = useState<{action: string; count: number; latestAt: string}[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let active = true;
-    request<{action: string; count: number; latestAt: string}[]>('/workspace/audit-summary')
-      .then(value => { if (active) setRows(value); }).catch(() => { if (active) setFailed(true); });
-    return () => { active = false; };
-  }, []);
-  return <section className="space-y-5">
-    <header className="rounded-2xl border border-violet-200 bg-white p-6 shadow-sm">
-      <h2 className="text-2xl font-bold">Management audit overview</h2>
-      <p className="mt-2 text-sm text-slate-600">Recorded patient registrations and record views in staging</p>
-    </header>
-    {failed && <p role="alert">Audit summary unavailable.</p>}
-    {!rows && !failed && <p role="status">Loading audit summary...</p>}
-    <dl className="grid gap-4 sm:grid-cols-2">
-      {rows?.map(row => <div key={row.action} className="rounded-xl border border-violet-200 bg-white p-6">
-        <dt className="font-medium">{row.action === 'registered' ? 'Patient registration events' : 'Record view events'}</dt>
-        <dd className="mt-2 text-3xl font-bold text-violet-900">{row.count}</dd>
-        <dd className="mt-2 text-sm text-slate-600">Latest {scheduleDate.format(new Date(row.latestAt))} (Monrovia)</dd>
-      </div>)}
-    </dl>
-    <ActivityTrend />
-    <SecurityLedger />
-    <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Emergency access override has no active workflow. Additional export paths require event instrumentation. Hash chaining checks internal consistency; the independent R2 checkpoint checks the retained ledger history.</p>
-  </section>;
-}
-
 function ManagementWorkspace() {
   const [metrics, setMetrics] = useState<DashboardMetric[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -1079,6 +987,12 @@ export function PatientRegistryPage() {
     { id: 'workflow', label: staff.role === 'viewer' ? 'Patient lookup' : staff.role === 'triage' ? 'Triage queue' : 'Assigned encounters' },
   ]);
 
+  if (staff && ['management'].includes(staff.role)) return <React.Suspense fallback={<p role="status" className="p-8">Loading Management workspace…</p>}><ManagementAuditWorkspace
+    username={staff.username} section={section} onSection={setSection} signingOut={busy} notice={status}
+    onSignOut={() => void perform(async () => {
+      await request('/logout', {}); setStaff(null); setSection('overview'); setPatient(null);
+    })} overview={<ManagementWorkspace />} /></React.Suspense>;
+
   return (
     <main className="min-h-screen bg-slate-50 px-5 py-10 text-slate-900">
       <div className={staff ? "mx-auto max-w-7xl" : "mx-auto max-w-3xl"}>
@@ -1129,7 +1043,7 @@ export function PatientRegistryPage() {
               {sections?.length === 0 && <p className="px-2 text-sm">No workflows assigned.</p>}
             </nav>
             <div>
-            {staff.role === 'management' ? (section === 'audit' ? <ManagementAudit /> : <ManagementWorkspace />) : section === 'overview' && staff.role !== 'viewer' && staff.role !== 'restricted'
+            {staff.role === 'management' ? <ManagementWorkspace /> : section === 'overview' && staff.role !== 'viewer' && staff.role !== 'restricted'
               ? <WorkspaceOverview key={staff.username} staff={staff} onOpen={() => setSection(staff.role === 'pharmacist' ? 'pharmacy' : 'workflow')} />
               : staff.role === 'cashier' || staff.role === 'billing' ? <CashierWorkspace role={staff.role} /> : staff.role === 'super_admin' ? (section === 'management' ? <ManagementWorkspace /> : <StaffAccessReview />) : isDepartmentRole(staff.role) ? <DepartmentWorkspace key={staff.role} role={staff.role} analytics={section === 'analytics'} />
             : staff.role === 'registrar' && section === 'appointments' ? <AppointmentQueue />
